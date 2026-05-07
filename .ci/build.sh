@@ -26,8 +26,13 @@ if [[ "$RUNNER_OS" == "macOS" ]]; then
 fi
 
 CARGO_CMD="cargo"
-if [ "$USE_CROSS" = "true" ]; then
+if [[ "${USE_CROSS:-}" == "true" ]]; then
   CARGO_CMD="cross"
+fi
+
+if [[ -n "${RUSTFLAGS:-}" ]]; then
+  # If RUSTFLAGS is set, any configuration through target.*.rustflags or build.rustflags will be omitted
+  warn "RUSTFLAGS is currently set to '${RUSTFLAGS}'"
 fi
 
 # Workspace root is virtual; read the binary crate's manifest directly.

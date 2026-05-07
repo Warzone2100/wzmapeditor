@@ -1,5 +1,9 @@
+[build]
+rustflags = ["-D", "warnings"]
+
 [target.x86_64-pc-windows-gnu]
 rustflags = [
+  "-D", "warnings",
   "-C", "link-args=-static",
   "-C", "link-args=-static-libgcc",
   "-C", "link-args=-static-libstdc++",

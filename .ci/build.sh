@@ -37,7 +37,7 @@ OUTPUT_LIST=""
 for BINARY in $BINARIES; do
   info "Building $BINARY (for target $RUSTTARGET) ..."
 
-  CARGO_TARGET_DIR="./target" ${CARGO_CMD} build --release --target "${RUSTTARGET}" --bin "${BINARY}" >&2
+  CARGO_TARGET_DIR="./target" ${CARGO_CMD} build --release --target "${RUSTTARGET}" --bin "${BINARY}" -v >&2
   OUTPUT=$(${FIND_CMD} "target/${RUSTTARGET}/release/" -maxdepth 1 -type f -executable \( -name "${BINARY}" -o -name "${BINARY}.*" \) -print0 | xargs -0)
 
   info "${OUTPUT}"

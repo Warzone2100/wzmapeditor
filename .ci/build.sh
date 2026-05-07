@@ -61,6 +61,16 @@ for BINARY in $BINARIES; do
 
   for f in $OUTPUT; do
     OUTPUT_LIST="$OUTPUT_LIST $(basename "$f")"
+
+    if [[ "${WZMAPEDITOR_PACKAGE_DEBUGSYMBOLS:-}" == "true" ]]; then
+      # Strip existing extension and check for a corresponding .pdb file
+      PDB_FILE="${f%.*}.pdb"
+      if [ -f "$PDB_FILE" ]; then
+        info "Found debug symbols: $PDB_FILE"
+        mv "$PDB_FILE" "${OUTPUT_DIR}" || error "Unable to copy: ${PDB_FILE}"
+        OUTPUT_LIST="$OUTPUT_LIST $(basename "$PDB_FILE")"
+      fi
+    fi
   done
 done
 

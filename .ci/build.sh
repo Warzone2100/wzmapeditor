@@ -16,6 +16,9 @@ set_gh_output() {
 }
 
 NAME="wzmapeditor_${RUSTTARGET}"
+if [[ -n "${WZMAPEDITOR_OUTPUT_DESC:-}" ]]; then
+  NAME="wzmapeditor_${WZMAPEDITOR_OUTPUT_DESC}"
+fi
 
 OUTPUT_DIR="${GITHUB_WORKSPACE}/output"
 mkdir -p "${OUTPUT_DIR}"

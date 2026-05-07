@@ -17,16 +17,24 @@ jobs:
           - name: Windows-x64
             os: windows-latest
             rust_target: 'x86_64-pc-windows-msvc'
+            output_desc: 'windows-x64'
+          - name: Windows-aarch64
+            os: windows-latest
+            rust_target: 'aarch64-pc-windows-msvc'
+            output_desc: 'windows-arm64'
           - name: macOS
             os: macos-latest
             rust_target: 'aarch64-apple-darwin'
+            output_desc: 'macos-arm64'
           - name: Linux-x64
             os: ubuntu-latest
             rust_target: 'x86_64-unknown-linux-gnu'
+            output_desc: 'linux-x64'
             use_cross: true
           - name: Linux-aarch64
             os: ubuntu-latest
             rust_target: 'aarch64-unknown-linux-gnu'
+            output_desc: 'linux-arm64'
             use_cross: true
       fail-fast: false
 
@@ -37,6 +45,7 @@ jobs:
       RUSTUP_TOOLCHAIN: '1.95.0'
       RUSTTARGET: '${{ matrix.rust_target }}'
       USE_CROSS: '${{ matrix.use_cross }}'
+      WZMAPEDITOR_OUTPUT_DESC: '${{ matrix.output_desc }}'
 
     steps:
     - uses: actions/checkout@v6

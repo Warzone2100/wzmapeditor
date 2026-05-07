@@ -22,11 +22,11 @@ jobs:
             rust_target: 'aarch64-apple-darwin'
           - name: Linux-x64
             os: ubuntu-latest
-            rust_target: 'x86_64-unknown-linux-musl'
+            rust_target: 'x86_64-unknown-linux-gnu'
             use_cross: true
           - name: Linux-aarch64
             os: ubuntu-latest
-            rust_target: 'aarch64-unknown-linux-musl'
+            rust_target: 'aarch64-unknown-linux-gnu'
             use_cross: true
       fail-fast: false
 
@@ -51,7 +51,7 @@ jobs:
         rustup target add "$RUSTTARGET" >&2
     - name: Install Cross
       if: matrix.use_cross == true
-      run: cargo install cross
+      run: cargo install cross --git https://github.com/cross-rs/cross --rev 65fe72b0cdb1e7e0cc0652517498d4389cc8f5cf
     - name: Build
       id: cargo_build
       shell: bash

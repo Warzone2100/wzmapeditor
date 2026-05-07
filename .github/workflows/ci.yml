@@ -44,6 +44,8 @@ jobs:
       if: runner.os == 'macOS'
       run: brew install findutils
     - uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7
+      with:
+        rustflags: ''
     - name: Prepare Rust toolchain
       shell: bash
       run: |

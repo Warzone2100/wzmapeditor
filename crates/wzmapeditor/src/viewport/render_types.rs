@@ -355,15 +355,15 @@ impl GroundTextureState {
         ground_scales: &[f32; 16],
     ) {
         let tex_size = 1024u32;
-        let texture_size = wgpu::Extent3d {
-            width: tex_size,
-            height: tex_size,
-            depth_or_array_layers: num_layers,
-        };
+        let texture_layers = super::atlas_gpu::pad_d2_array_layers(num_layers);
 
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("ground_texture_array"),
-            size: texture_size,
+            size: wgpu::Extent3d {
+                width: tex_size,
+                height: tex_size,
+                depth_or_array_layers: texture_layers,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -385,7 +385,11 @@ impl GroundTextureState {
                 bytes_per_row: Some(4 * tex_size),
                 rows_per_image: Some(tex_size),
             },
-            texture_size,
+            wgpu::Extent3d {
+                width: tex_size,
+                height: tex_size,
+                depth_or_array_layers: num_layers,
+            },
         );
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor {

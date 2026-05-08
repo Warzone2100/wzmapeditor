@@ -167,14 +167,14 @@ pub fn upload_texture_array(
     size: u32,
     layers: u32,
 ) -> wgpu::TextureView {
-    let extent = wgpu::Extent3d {
-        width: size,
-        height: size,
-        depth_or_array_layers: layers,
-    };
+    let texture_layers = pad_d2_array_layers(layers);
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some(label),
-        size: extent,
+        size: wgpu::Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: texture_layers,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -195,10 +195,26 @@ pub fn upload_texture_array(
             bytes_per_row: Some(4 * size),
             rows_per_image: Some(size),
         },
-        extent,
+        wgpu::Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: layers,
+        },
     );
     texture.create_view(&wgpu::TextureViewDescriptor {
         dimension: Some(wgpu::TextureViewDimension::D2Array),
         ..Default::default()
     })
+}
+
+/// Round a D2-array layer count up by one when it's a non-trivial
+/// multiple of 6. wgpu's GL backend would otherwise create the texture
+/// as `GL_TEXTURE_CUBE_MAP_ARRAY`, which a `sampler2DArray` reads as
+/// zeros (black terrain).
+pub(crate) fn pad_d2_array_layers(layers: u32) -> u32 {
+    if layers > 1 && layers.is_multiple_of(6) {
+        layers + 1
+    } else {
+        layers
+    }
 }

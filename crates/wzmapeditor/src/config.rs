@@ -14,8 +14,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GraphicsBackend {
     #[default]
-    Dx12,
     Vulkan,
+    Dx12,
     OpenGl,
 }
 

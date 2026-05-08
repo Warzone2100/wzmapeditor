@@ -149,7 +149,7 @@ fn show_rendering_settings(ui: &mut Ui, app: &mut EditorApp) {
             egui::ComboBox::from_id_salt("graphics_backend_combo")
                 .selected_text(current.label())
                 .show_ui(ui, |ui| {
-                    for backend in [GraphicsBackend::Dx12, GraphicsBackend::Vulkan] {
+                    for backend in [GraphicsBackend::Vulkan, GraphicsBackend::Dx12] {
                         if ui
                             .selectable_label(current == backend, backend.label())
                             .clicked()

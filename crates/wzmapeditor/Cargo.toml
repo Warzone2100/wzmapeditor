@@ -34,6 +34,13 @@ fastrand = "2"
 noise = "0.9"
 mimalloc = "0.1"
 
+[target.aarch64-pc-windows-msvc.dependencies]
+# Use mimalloc v2 on arm64 windows builds to avoid a runtime crash caused by mimalloc 3.3.0/3.3.1
+# Can be removed once one of these PRs is merged:
+# - https://github.com/purpleprotocol/mimalloc_rust/pull/160
+# - https://github.com/purpleprotocol/mimalloc_rust/pull/164
+mimalloc = { version = "0.1", features = ["v2"] }
+
 [dev-dependencies]
 tempfile = "3"
 

@@ -116,13 +116,21 @@ pub fn load_from_wz_archive(wz_path: &Path) -> Result<WzMap, MapError> {
         .ok()
         .and_then(|bytes| String::from_utf8(bytes).ok());
 
-    let (map_name, players, tileset) = if let Some(meta) = level_meta {
-        (meta.name, meta.players, meta.tileset)
-    } else {
-        let p = parse_player_count(&map_name);
-        let t = detect_tileset_from_ttp(terrain_types.as_ref());
-        (map_name, p, t)
-    };
+    let (map_name, players, tileset, author, additional_authors, license) =
+        if let Some(meta) = level_meta {
+            (
+                meta.name,
+                meta.players,
+                meta.tileset,
+                meta.author,
+                meta.additional_authors,
+                meta.license,
+            )
+        } else {
+            let p = parse_player_count(&map_name);
+            let t = detect_tileset_from_ttp(terrain_types.as_ref());
+            (map_name, p, t, None, Vec::new(), None)
+        };
 
     Ok(WzMap {
         map_data,
@@ -135,6 +143,9 @@ pub fn load_from_wz_archive(wz_path: &Path) -> Result<WzMap, MapError> {
         players,
         tileset,
         custom_templates_json,
+        author,
+        additional_authors,
+        license,
     })
 }
 
@@ -159,7 +170,7 @@ pub fn save_to_wz_archive(
         source: e,
     };
 
-    let level_json = build_level_json(&map.map_name, map.players, &map.tileset);
+    let level_json = build_level_json(map);
     zip.start_file("level.json", options)?;
     std::io::Write::write_all(&mut zip, level_json.as_bytes()).map_err(&io_err)?;
 
@@ -282,13 +293,21 @@ pub fn load_map_from_archive_prefix(wz_path: &Path, prefix: &str) -> Result<WzMa
         Err(_) => Vec::new(),
     };
 
-    let (map_name, players, tileset) = if let Some(meta) = level_meta {
-        (meta.name, meta.players, meta.tileset)
-    } else {
-        let p = parse_player_count(&map_name);
-        let t = detect_tileset_from_ttp(terrain_types.as_ref());
-        (map_name, p, t)
-    };
+    let (map_name, players, tileset, author, additional_authors, license) =
+        if let Some(meta) = level_meta {
+            (
+                meta.name,
+                meta.players,
+                meta.tileset,
+                meta.author,
+                meta.additional_authors,
+                meta.license,
+            )
+        } else {
+            let p = parse_player_count(&map_name);
+            let t = detect_tileset_from_ttp(terrain_types.as_ref());
+            (map_name, p, t, None, Vec::new(), None)
+        };
 
     Ok(WzMap {
         map_data,
@@ -301,6 +320,9 @@ pub fn load_map_from_archive_prefix(wz_path: &Path, prefix: &str) -> Result<WzMa
         players,
         tileset,
         custom_templates_json: None,
+        author,
+        additional_authors,
+        license,
     })
 }
 

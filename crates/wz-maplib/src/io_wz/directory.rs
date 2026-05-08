@@ -95,6 +95,9 @@ pub fn load_from_directory(dir: &Path) -> Result<WzMap, MapError> {
         players,
         tileset,
         custom_templates_json,
+        author: None,
+        additional_authors: Vec::new(),
+        license: None,
     })
 }
 

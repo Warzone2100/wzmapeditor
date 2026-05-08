@@ -15,6 +15,7 @@ mod designer;
 mod generator;
 mod icon;
 mod keybindings;
+mod launch_sentinel;
 mod logger;
 mod map;
 mod startup;
@@ -43,7 +44,38 @@ fn main() -> eframe::Result {
     // Load the persisted config once at startup to pick the wgpu backend.
     // `EditorApp::new` reads it again; the second read is cheap and keeps
     // the app init path unchanged.
-    let startup_config = config::EditorConfig::load();
+    #[cfg_attr(
+        not(target_os = "windows"),
+        expect(
+            unused_mut,
+            reason = "launch-sentinel fallback only mutates on Windows"
+        )
+    )]
+    let mut startup_config = config::EditorConfig::load();
+
+    if let Some(prev) = launch_sentinel::consume() {
+        log::warn!(
+            "The previous launch crashed during startup using the {} graphics backend. If this keeps happening, edit graphics_backend in {}/wzmapeditor.json or delete it to retry.",
+            prev.label(),
+            config::config_dir().display()
+        );
+        #[cfg(target_os = "windows")]
+        if prev == startup_config.graphics_backend {
+            let alt = match prev {
+                config::GraphicsBackend::Dx12 => config::GraphicsBackend::Vulkan,
+                config::GraphicsBackend::Vulkan | config::GraphicsBackend::OpenGl => {
+                    config::GraphicsBackend::Dx12
+                }
+            };
+            log::warn!(
+                "Switching to {} for this launch and saving the choice. Change it in Settings > Rendering > Graphics Backend if you'd rather pick yourself.",
+                alt.label()
+            );
+            startup_config.graphics_backend = alt;
+            startup_config.save();
+        }
+    }
+
     log::info!(
         "Graphics backend preference: {}",
         startup_config.graphics_backend.label()
@@ -92,6 +124,8 @@ fn main() -> eframe::Result {
         ..Default::default()
     };
 
+    launch_sentinel::arm(startup_config.graphics_backend);
+
     let mut output_log_slot = Some(output_log);
     eframe::run_native(
         "wzmapeditor",
@@ -114,6 +148,7 @@ fn backend_flags_for(cfg: &config::EditorConfig) -> wgpu::Backends {
         match cfg.graphics_backend {
             config::GraphicsBackend::Dx12 => eframe::wgpu::Backends::DX12,
             config::GraphicsBackend::Vulkan => eframe::wgpu::Backends::VULKAN,
+            config::GraphicsBackend::OpenGl => eframe::wgpu::Backends::GL,
         }
     }
     #[cfg(not(target_os = "windows"))]

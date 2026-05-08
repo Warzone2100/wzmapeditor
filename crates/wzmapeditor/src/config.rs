@@ -6,14 +6,17 @@ use serde::{Deserialize, Serialize};
 
 /// User-selected graphics backend.
 ///
-/// Only meaningful on Windows, where wgpu can target either Direct3D 12 or
-/// Vulkan. Other platforms ignore this setting and use the platform default
-/// (Metal on macOS, Vulkan on Linux).
+/// Only meaningful on Windows, where wgpu can target Direct3D 12, Vulkan,
+/// or OpenGL. Other platforms ignore this setting and use the platform
+/// default (Metal on macOS, Vulkan on Linux). `OpenGl` is not yet exposed
+/// in the settings UI; it exists so the launch sentinel can round-trip it
+/// once the backend support lands.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GraphicsBackend {
     #[default]
     Dx12,
     Vulkan,
+    OpenGl,
 }
 
 impl GraphicsBackend {
@@ -22,6 +25,7 @@ impl GraphicsBackend {
         match self {
             Self::Dx12 => "Direct3D 12",
             Self::Vulkan => "Vulkan",
+            Self::OpenGl => "OpenGL",
         }
     }
 }

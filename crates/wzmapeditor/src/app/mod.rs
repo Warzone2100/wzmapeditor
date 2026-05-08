@@ -200,6 +200,9 @@ pub struct EditorApp {
     /// Wall-clock timestamp of the last frame painted under an FPS cap,
     /// used to compute how long to sleep when enforcing `fps_limit`.
     pub last_paint_at: Option<std::time::Instant>,
+    /// `update()` call count, used to detect the first surviving frame
+    /// so the launch sentinel can be cleared.
+    pub update_count: u32,
 }
 
 impl std::fmt::Debug for EditorApp {
@@ -433,6 +436,7 @@ impl EditorApp {
             },
             window_focused: true,
             last_paint_at: None,
+            update_count: 0,
         }
     }
 
@@ -682,6 +686,12 @@ impl eframe::App for EditorApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.update_count = self.update_count.saturating_add(1);
+        // Reaching the second update means the first frame rendered, so
+        // GPU init and egui's first shader compile succeeded.
+        if self.update_count == 2 {
+            crate::launch_sentinel::disarm();
+        }
         self.record_frame_time(ctx);
         // Snapshot OS-level window focus so animation-driven repaint
         // schedulers can skip when we're in the background. egui already

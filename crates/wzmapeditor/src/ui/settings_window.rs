@@ -4,7 +4,7 @@ use egui::{Color32, RichText, Ui};
 use wz_maplib::validate::{ValidationCategory, WarningRule};
 
 use crate::app::EditorApp;
-use crate::config::{GraphicsBackend, PresentMode};
+use crate::config::{GraphicsBackend, PresentMode, ThemePreference};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SettingsPage {
@@ -87,6 +87,30 @@ pub fn show_settings_window(ctx: &egui::Context, app: &mut EditorApp) {
 fn show_viewport_settings(ui: &mut Ui, app: &mut EditorApp) {
     ui.heading("Viewport");
     ui.label(RichText::new("Configure viewport overlays and display options.").weak());
+    ui.add_space(8.0);
+
+    ui.label(RichText::new("Appearance").strong());
+    ui.horizontal(|ui| {
+        ui.label("Theme:");
+        let current = app.config.theme_preference;
+        egui::ComboBox::from_id_salt("theme_preference_combo")
+            .selected_text(current.label())
+            .show_ui(ui, |ui| {
+                for theme in ThemePreference::ALL {
+                    if ui
+                        .selectable_label(current == theme, theme.label())
+                        .clicked()
+                        && app.config.theme_preference != theme
+                    {
+                        app.config.theme_preference = theme;
+                        ui.ctx().set_theme(theme);
+                        app.config.save();
+                    }
+                }
+            });
+    });
+    ui.add_space(8.0);
+    ui.separator();
     ui.add_space(8.0);
 
     ui.checkbox(

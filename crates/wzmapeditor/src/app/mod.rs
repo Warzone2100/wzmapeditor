@@ -274,6 +274,8 @@ impl EditorApp {
 
         let config = EditorConfig::load();
 
+        cc.egui_ctx.set_theme(config.theme_preference);
+
         let startup_init = crate::startup::pipeline::create_startup(&config);
         let startup_phase = startup_init.phase;
         let extraction_progress_arc = startup_init.extraction_progress;

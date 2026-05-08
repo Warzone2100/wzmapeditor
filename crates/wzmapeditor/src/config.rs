@@ -55,6 +55,40 @@ impl GraphicsBackend {
     }
 }
 
+/// User-selected UI theme. `System` follows the OS dark/light preference
+/// via egui's built-in detection; `Light` and `Dark` force a fixed theme.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ThemePreference {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+impl ThemePreference {
+    /// Human-readable label for UI surfaces.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::System => "System",
+            Self::Light => "Light",
+            Self::Dark => "Dark",
+        }
+    }
+
+    /// All variants in display order.
+    pub const ALL: [Self; 3] = [Self::System, Self::Light, Self::Dark];
+}
+
+impl From<ThemePreference> for egui::ThemePreference {
+    fn from(value: ThemePreference) -> Self {
+        match value {
+            ThemePreference::System => Self::System,
+            ThemePreference::Light => Self::Light,
+            ThemePreference::Dark => Self::Dark,
+        }
+    }
+}
+
 /// Swapchain present mode preference.
 ///
 /// `SmartVsync` is the user-facing "Vsync ON" setting and resolves to
@@ -217,6 +251,9 @@ pub struct EditorConfig {
     /// waiting for the presentation queue to drain.
     #[serde(default)]
     pub fps_limit: Option<u32>,
+    /// UI theme preference. `System` follows the OS dark/light setting.
+    #[serde(default)]
+    pub theme_preference: ThemePreference,
 }
 
 impl Default for EditorConfig {
@@ -253,6 +290,7 @@ impl Default for EditorConfig {
             graphics_backend: GraphicsBackend::default(),
             present_mode: PresentMode::default(),
             fps_limit: None,
+            theme_preference: ThemePreference::default(),
         }
     }
 }

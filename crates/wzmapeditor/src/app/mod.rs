@@ -3,7 +3,7 @@
 mod actions;
 mod data_loading;
 mod designer;
-mod dialogs;
+pub(crate) mod dialogs;
 mod dock_viewer;
 mod duplicate;
 mod map_io;
@@ -91,6 +91,8 @@ pub struct EditorApp {
     pub new_map_dialog: NewMapDialog,
     /// Resize-map dialog state.
     pub resize_map_dialog: ResizeMapDialog,
+    /// Save As metadata dialog state.
+    pub save_as_metadata_dialog: SaveAsMetadataDialog,
     /// Map generator dialog state.
     pub generator_dialog: crate::generator::dialog::GeneratorDialog,
     /// Game stats database (structures, features).
@@ -395,6 +397,7 @@ impl EditorApp {
             show_gateways,
             new_map_dialog: NewMapDialog::default(),
             resize_map_dialog: ResizeMapDialog::default(),
+            save_as_metadata_dialog: SaveAsMetadataDialog::default(),
             generator_dialog: crate::generator::dialog::GeneratorDialog::default(),
             stats: None,
             model_loader: None,
@@ -871,6 +874,9 @@ fn show_dialogs(ctx: &egui::Context, app: &mut EditorApp) {
     }
     if app.resize_map_dialog.open {
         dialogs::show_resize_map_dialog(ctx, app);
+    }
+    if app.save_as_metadata_dialog.open {
+        dialogs::show_save_as_metadata_dialog(ctx, app);
     }
     if app.generator_dialog.open || app.generator_dialog.gen_rx.is_some() {
         crate::generator::dialog::show_generator_dialog(ctx, app);

@@ -140,6 +140,18 @@ impl PresentMode {
     }
 }
 
+/// SPDX license expressions offered by the Save As dialog. `CC0-1.0` is
+/// first because it is the default for new maps.
+pub const LICENSE_OPTIONS: &[&str] = &[
+    "CC0-1.0",
+    "GPL-2.0-or-later",
+    "CC-BY-3.0 OR GPL-2.0-or-later",
+    "CC-BY-SA-3.0 OR GPL-2.0-or-later",
+];
+
+/// Default SPDX license written when a map has no prior license set.
+pub const DEFAULT_LICENSE: &str = "CC0-1.0";
+
 /// Persistent configuration saved to disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EditorConfig {
@@ -258,6 +270,9 @@ pub struct EditorConfig {
     /// Overrides the auto-detection via `game_install_dir` when set.
     #[serde(default)]
     pub wz_executable: Option<PathBuf>,
+    /// Default `level.json` author name used when saving a new map.
+    #[serde(default)]
+    pub default_author_name: Option<String>,
 }
 
 impl Default for EditorConfig {
@@ -296,6 +311,7 @@ impl Default for EditorConfig {
             fps_limit: None,
             theme_preference: ThemePreference::default(),
             wz_executable: None,
+            default_author_name: None,
         }
     }
 }

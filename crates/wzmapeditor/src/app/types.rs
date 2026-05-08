@@ -186,6 +186,17 @@ pub struct PermissionErrorDialog {
     pub error_message: String,
 }
 
+/// State for the Save As metadata dialog. Captures `level.json` fields
+/// before invoking the file picker.
+#[derive(Debug, Default)]
+pub struct SaveAsMetadataDialog {
+    pub open: bool,
+    pub author: String,
+    pub additional_authors: String,
+    pub license: String,
+    pub original_author: Option<String>,
+}
+
 /// Which type and index of object is selected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SelectedObject {

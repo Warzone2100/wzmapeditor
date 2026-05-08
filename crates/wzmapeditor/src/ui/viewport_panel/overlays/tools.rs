@@ -319,48 +319,87 @@ pub(super) fn draw_vertex_sculpt(
 
     let dragging = tool.marquee_active || tool.marquee_start.is_some();
 
+    let mirror_mode = app.tool_state.mirror_mode;
+    let mirror_active = mirror_mode != MirrorMode::None && ToolId::VertexSculpt.uses_mirror();
+    let mirrored_selected: Vec<(u32, u32)> = if mirror_active {
+        let mut out = Vec::new();
+        for &(vx, vy) in &tool.selected_vertices {
+            for pt in
+                tools::mirror::mirror_vertex_points(vx, vy, map.width, map.height, mirror_mode)
+            {
+                if pt != (vx, vy) && !tool.selected_vertices.contains(&pt) && !out.contains(&pt) {
+                    out.push(pt);
+                }
+            }
+        }
+        out
+    } else {
+        Vec::new()
+    };
+
     // Faint dot field around the cursor; hidden during marquee drag so the
     // terrain reaction stays visible.
     if !dragging && let Some((hx, hy)) = app.hovered_tile {
         const DOT_RADIUS_TILES: i32 = 8;
         const DOT_RADIUS_SQ: f32 = (DOT_RADIUS_TILES * DOT_RADIUS_TILES) as f32;
-        let selected: std::collections::HashSet<(u32, u32)> =
-            tool.selected_vertices.iter().copied().collect();
+        let selected: std::collections::HashSet<(u32, u32)> = tool
+            .selected_vertices
+            .iter()
+            .chain(mirrored_selected.iter())
+            .copied()
+            .collect();
         let inv_r = 1.0 / DOT_RADIUS_TILES as f32;
-        let cx = hx as i32;
-        let cy = hy as i32;
-        for dy in -DOT_RADIUS_TILES..=DOT_RADIUS_TILES {
-            for dx in -DOT_RADIUS_TILES..=DOT_RADIUS_TILES {
-                let dist_sq = (dx * dx + dy * dy) as f32;
-                if dist_sq > DOT_RADIUS_SQ {
-                    continue;
+
+        let mut centers: Vec<(i32, i32)> = vec![(hx as i32, hy as i32)];
+        if mirror_active {
+            for (mx, my) in
+                tools::mirror::mirror_vertex_points(hx, hy, map.width, map.height, mirror_mode)
+            {
+                let pt = (mx as i32, my as i32);
+                if !centers.contains(&pt) {
+                    centers.push(pt);
                 }
-                let vx_i = cx + dx;
-                let vy_i = cy + dy;
-                if vx_i < 0 || vy_i < 0 {
-                    continue;
+            }
+        }
+
+        let mut drawn: std::collections::HashSet<(u32, u32)> = std::collections::HashSet::new();
+        for (cx, cy) in centers {
+            for dy in -DOT_RADIUS_TILES..=DOT_RADIUS_TILES {
+                for dx in -DOT_RADIUS_TILES..=DOT_RADIUS_TILES {
+                    let dist_sq = (dx * dx + dy * dy) as f32;
+                    if dist_sq > DOT_RADIUS_SQ {
+                        continue;
+                    }
+                    let vx_i = cx + dx;
+                    let vy_i = cy + dy;
+                    if vx_i < 0 || vy_i < 0 {
+                        continue;
+                    }
+                    let vx = vx_i as u32;
+                    let vy = vy_i as u32;
+                    if vx >= map.width || vy >= map.height {
+                        continue;
+                    }
+                    if selected.contains(&(vx, vy)) || !drawn.insert((vx, vy)) {
+                        continue;
+                    }
+                    let h = map.tile(vx, vy).map_or(0.0, |t| t.height as f32);
+                    let world = Vec3::new(vx as f32 * TILE_UNITS, h + 2.0, vy as f32 * TILE_UNITS);
+                    let Some(p) = project(world) else {
+                        continue;
+                    };
+                    let t = (dist_sq.sqrt() * inv_r).clamp(0.0, 1.0);
+                    let fade = 1.0 - t * t;
+                    let alpha = (fade * 170.0) as u8;
+                    if alpha < 12 {
+                        continue;
+                    }
+                    let fill = Color32::from_rgba_unmultiplied(235, 235, 235, alpha);
+                    let rim_alpha = (fade * 200.0) as u8;
+                    let rim = Color32::from_rgba_unmultiplied(20, 20, 20, rim_alpha);
+                    painter.circle_filled(p, 2.0, rim);
+                    painter.circle_filled(p, 1.4, fill);
                 }
-                let vx = vx_i as u32;
-                let vy = vy_i as u32;
-                if vx >= map.width || vy >= map.height {
-                    continue;
-                }
-                if selected.contains(&(vx, vy)) {
-                    continue;
-                }
-                let h = map.tile(vx, vy).map_or(0.0, |t| t.height as f32);
-                let world = Vec3::new(vx as f32 * TILE_UNITS, h + 2.0, vy as f32 * TILE_UNITS);
-                let Some(p) = project(world) else {
-                    continue;
-                };
-                let t = (dist_sq.sqrt() * inv_r).clamp(0.0, 1.0);
-                let fade = 1.0 - t * t;
-                let alpha = (fade * 70.0) as u8;
-                if alpha < 6 {
-                    continue;
-                }
-                let color = Color32::from_rgba_unmultiplied(220, 220, 220, alpha);
-                painter.circle_filled(p, 1.2, color);
             }
         }
     }
@@ -373,6 +412,18 @@ pub(super) fn draw_vertex_sculpt(
             let r = Rect::from_center_size(p, egui::vec2(half * 2.0, half * 2.0));
             painter.rect_filled(r, 1.0, yellow);
             painter.rect_stroke(r, 1.0, Stroke::new(1.5, outline), StrokeKind::Inside);
+        }
+    }
+
+    let mirror_fill = Color32::from_rgba_unmultiplied(255, 220, 60, 70);
+    for &(vx, vy) in &mirrored_selected {
+        let h = map.tile(vx, vy).map_or(0.0, |t| t.height as f32);
+        let world = Vec3::new(vx as f32 * TILE_UNITS, h + 4.0, vy as f32 * TILE_UNITS);
+        if let Some(p) = project(world) {
+            let half = 4.5;
+            let r = Rect::from_center_size(p, egui::vec2(half * 2.0, half * 2.0));
+            painter.rect_filled(r, 1.0, mirror_fill);
+            painter.rect_stroke(r, 1.0, Stroke::new(1.5, yellow), StrokeKind::Inside);
         }
     }
 

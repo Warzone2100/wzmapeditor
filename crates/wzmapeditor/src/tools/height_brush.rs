@@ -223,7 +223,7 @@ impl HeightBrushTool {
     fn fire(&mut self, ctx: &mut ToolCtx<'_>, tx: u32, ty: u32) {
         let map_w = ctx.map.map_data.width;
         let map_h = ctx.map.map_data.height;
-        let pts = mirror::mirror_points(tx, ty, map_w, map_h, ctx.mirror_mode);
+        let pts = mirror::mirror_vertex_points(tx, ty, map_w, map_h, ctx.mirror_mode);
 
         for &(mx, my) in &pts {
             self.snapshot_radius(&ctx.map.map_data, mx, my);

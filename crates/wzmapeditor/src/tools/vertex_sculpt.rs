@@ -15,10 +15,29 @@ use wz_maplib::constants::TILE_UNITS_F32 as TILE_UNITS;
 use wz_maplib::map_data::MapData;
 
 use crate::map::history::EditCommand;
+use crate::tools::MirrorMode;
 use crate::tools::height_brush::{HeightEditCommand, clamp_height, gaussian_falloff};
+use crate::tools::mirror::mirror_vertex_points;
 use crate::tools::trait_def::{PointerInput, Tool, ToolCtx};
 use crate::viewport::camera::Camera;
 use crate::viewport::picking;
+
+fn expand_with_mirrors(
+    selected: &[(u32, u32)],
+    map_w: u32,
+    map_h: u32,
+    mirror_mode: MirrorMode,
+) -> Vec<(u32, u32)> {
+    let mut out = Vec::with_capacity(selected.len());
+    for &(vx, vy) in selected {
+        for pt in mirror_vertex_points(vx, vy, map_w, map_h, mirror_mode) {
+            if !out.contains(&pt) {
+                out.push(pt);
+            }
+        }
+    }
+    out
+}
 
 /// Capture every vertex within `radius` of any selected vertex into the
 /// snapshot, along with the matching tile heights at the start of a drag.
@@ -162,6 +181,7 @@ pub(crate) struct VertexSculptTool {
     drag_active: bool,
     drag_start_screen: Option<Pos2>,
     drag_height_snapshot: HashMap<(u32, u32), u16>,
+    drag_selected_mirrored: Vec<(u32, u32)>,
     pub(crate) marquee_active: bool,
     pub(crate) marquee_start: Option<Pos2>,
     pub(crate) marquee_current: Option<Pos2>,
@@ -176,6 +196,7 @@ impl Default for VertexSculptTool {
             drag_active: false,
             drag_start_screen: None,
             drag_height_snapshot: HashMap::new(),
+            drag_selected_mirrored: Vec::new(),
             marquee_active: false,
             marquee_start: None,
             marquee_current: None,
@@ -196,6 +217,7 @@ impl VertexSculptTool {
         self.drag_active = false;
         self.drag_start_screen = None;
         self.drag_height_snapshot.clear();
+        self.drag_selected_mirrored.clear();
         self.marquee_active = false;
         self.marquee_start = None;
         self.marquee_current = None;
@@ -238,6 +260,7 @@ impl VertexSculptTool {
         rect: Rect,
         camera: &Camera,
         map: &MapData,
+        mirror_mode: MirrorMode,
     ) {
         let Some(hp) = response.hover_pos() else {
             return;
@@ -252,7 +275,7 @@ impl VertexSculptTool {
         }
 
         if self.cursor_over_selected_vertex(hp, rect, camera, map) {
-            self.start_height_drag(hp, map);
+            self.start_height_drag(hp, map, mirror_mode);
             return;
         }
 
@@ -263,15 +286,18 @@ impl VertexSculptTool {
             if !self.selected_vertices.contains(&vertex) {
                 self.selected_vertices.push(vertex);
             }
-            self.start_height_drag(hp, map);
+            self.start_height_drag(hp, map, mirror_mode);
         }
     }
 
-    fn start_height_drag(&mut self, hp: Pos2, map: &MapData) {
-        let snap = build_drag_snapshot(map, &self.selected_vertices, self.soft_select_radius);
+    fn start_height_drag(&mut self, hp: Pos2, map: &MapData, mirror_mode: MirrorMode) {
+        let mirrored =
+            expand_with_mirrors(&self.selected_vertices, map.width, map.height, mirror_mode);
+        let snap = build_drag_snapshot(map, &mirrored, self.soft_select_radius);
         self.drag_active = true;
         self.drag_start_screen = Some(hp);
         self.drag_height_snapshot = snap;
+        self.drag_selected_mirrored = mirrored;
     }
 
     fn start_marquee(&mut self, hp: Pos2, additive: bool) {
@@ -304,7 +330,7 @@ impl VertexSculptTool {
 
         apply_soft_drag(
             &mut ctx.map.map_data,
-            &self.selected_vertices,
+            &self.drag_selected_mirrored,
             self.soft_select_radius,
             delta_world_y,
             &self.drag_height_snapshot,
@@ -316,6 +342,7 @@ impl VertexSculptTool {
 
     fn finalize_drag(&mut self, ctx: &mut ToolCtx<'_>) -> Option<Box<dyn EditCommand>> {
         let snapshot = std::mem::take(&mut self.drag_height_snapshot);
+        self.drag_selected_mirrored.clear();
         self.drag_active = false;
         self.drag_start_screen = None;
 
@@ -479,7 +506,8 @@ impl Tool for VertexSculptTool {
         }
 
         if response.drag_started_by(egui::PointerButton::Primary) {
-            self.try_start_drag_or_marquee(response, rect, camera, &ctx.map.map_data);
+            let mirror_mode = ctx.mirror_mode;
+            self.try_start_drag_or_marquee(response, rect, camera, &ctx.map.map_data, mirror_mode);
             return None;
         }
 
@@ -629,8 +657,55 @@ mod tests {
     }
 
     use crate::map::history::EditHistory;
-    use crate::tools::MirrorMode;
     use crate::tools::trait_def::DirtyFlags;
+    use crate::tools::ToolId;
+
+    #[test]
+    fn vertex_sculpt_uses_mirror() {
+        assert!(ToolId::VertexSculpt.uses_mirror());
+    }
+
+    #[test]
+    fn expand_with_mirrors_dedups_on_axis() {
+        let expanded = expand_with_mirrors(&[(5, 3)], 10, 10, MirrorMode::Vertical);
+        assert_eq!(expanded, vec![(5, 3)]);
+    }
+
+    #[test]
+    fn expand_with_mirrors_vertical_pairs() {
+        let expanded = expand_with_mirrors(&[(2, 4)], 10, 10, MirrorMode::Vertical);
+        assert_eq!(expanded, vec![(2, 4), (8, 4)]);
+    }
+
+    #[test]
+    fn vertex_drag_mirrors_symmetrically() {
+        let mut map = make_map(11, 11, 200);
+        let selected = vec![(2, 5)];
+        let expanded = expand_with_mirrors(&selected, map.width, map.height, MirrorMode::Vertical);
+        assert_eq!(expanded, vec![(2, 5), (9, 5)]);
+
+        let snap = build_drag_snapshot(&map, &expanded, 2);
+        apply_soft_drag(&mut map, &expanded, 2, 60.0, &snap);
+
+        let left = map.tile(2, 5).unwrap().height;
+        let right = map.tile(9, 5).unwrap().height;
+        assert_eq!(left, 260);
+        assert_eq!(right, left, "mirrored vertex must move with the source");
+    }
+
+    #[test]
+    fn vertex_drag_mirror_both_raises_four_corners() {
+        let mut map = make_map(11, 11, 100);
+        let expanded = expand_with_mirrors(&[(1, 2)], map.width, map.height, MirrorMode::Both);
+        let snap = build_drag_snapshot(&map, &expanded, 1);
+        apply_soft_drag(&mut map, &expanded, 1, 50.0, &snap);
+
+        let h = |x, y| map.tile(x, y).unwrap().height;
+        assert_eq!(h(1, 2), 150);
+        assert_eq!(h(10, 2), 150);
+        assert_eq!(h(1, 9), 150);
+        assert_eq!(h(10, 9), 150);
+    }
 
     #[test]
     fn vertex_sculpt_default_radius() {

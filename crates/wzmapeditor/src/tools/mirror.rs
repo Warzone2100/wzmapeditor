@@ -61,6 +61,19 @@ pub fn mirror_points(
     )
 }
 
+/// Up to 4 unique mirrored vertex coords (original first). The vertex grid
+/// is `map_dim + 1` wide; vertex `v` mirrors to `map_dim - v` (axis at
+/// `map_dim / 2`), distinct from the tile-center mirror.
+pub fn mirror_vertex_points(
+    vx: u32,
+    vy: u32,
+    map_w: u32,
+    map_h: u32,
+    mode: MirrorMode,
+) -> Vec<(u32, u32)> {
+    mirror_coords(vx, vy, map_w, map_h, mode)
+}
+
 /// Mirrored world-unit coords. World coords are continuous (not tile-snapped),
 /// so the mirror axis is `map_dim * TILE_UNITS`.
 pub fn mirror_world_points(
@@ -298,6 +311,44 @@ mod tests {
                 "mode={mode:?} should collapse to 1 point"
             );
         }
+    }
+
+    #[test]
+    fn test_vertex_mirror_vertical() {
+        let pts = mirror_vertex_points(3, 5, 10, 10, MirrorMode::Vertical);
+        assert_eq!(pts, vec![(3, 5), (7, 5)]);
+    }
+
+    #[test]
+    fn test_vertex_mirror_horizontal() {
+        let pts = mirror_vertex_points(3, 4, 10, 10, MirrorMode::Horizontal);
+        assert_eq!(pts, vec![(3, 4), (3, 6)]);
+    }
+
+    #[test]
+    fn test_vertex_mirror_central_dedup_even_dim() {
+        let pts = mirror_vertex_points(5, 3, 10, 10, MirrorMode::Vertical);
+        assert_eq!(pts, vec![(5, 3)]);
+    }
+
+    #[test]
+    fn test_vertex_mirror_corner_both() {
+        let pts = mirror_vertex_points(0, 0, 8, 8, MirrorMode::Both);
+        assert_eq!(pts, vec![(0, 0), (8, 0), (0, 8), (8, 8)]);
+    }
+
+    #[test]
+    fn test_vertex_mirror_diagonal_4_points() {
+        let pts = mirror_vertex_points(1, 3, 10, 10, MirrorMode::Diagonal);
+        assert_eq!(pts, vec![(1, 3), (3, 1), (7, 9), (9, 7)]);
+    }
+
+    #[test]
+    fn test_vertex_mirror_axis_is_map_dim() {
+        let v = 2u32;
+        let map = 10u32;
+        let pts = mirror_vertex_points(v, 4, map, map, MirrorMode::Vertical);
+        assert_eq!(pts[1].0, map - v);
     }
 
     #[test]

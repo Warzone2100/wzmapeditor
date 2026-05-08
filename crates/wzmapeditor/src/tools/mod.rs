@@ -51,7 +51,11 @@ impl ToolId {
     pub fn uses_mirror(self) -> bool {
         matches!(
             self,
-            Self::HeightBrush | Self::TexturePaint | Self::ObjectPlace | Self::Stamp
+            Self::HeightBrush
+                | Self::TexturePaint
+                | Self::ObjectPlace
+                | Self::Stamp
+                | Self::VertexSculpt
         )
     }
 }

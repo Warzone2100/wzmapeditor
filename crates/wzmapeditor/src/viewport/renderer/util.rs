@@ -112,14 +112,6 @@ impl<'a> BindGroupLayoutBuilder<'a> {
         self.buffer(binding, visibility, wgpu::BufferBindingType::Uniform)
     }
 
-    pub fn storage_buffer_read_only(self, binding: u32, visibility: wgpu::ShaderStages) -> Self {
-        self.buffer(
-            binding,
-            visibility,
-            wgpu::BufferBindingType::Storage { read_only: true },
-        )
-    }
-
     pub fn build(self, device: &wgpu::Device) -> wgpu::BindGroupLayout {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some(self.label),
@@ -297,23 +289,15 @@ mod tests {
     }
 
     #[test]
-    fn builder_storage_and_depth_helpers() {
-        let built = BindGroupLayoutBuilder::new("test_storage_depth")
-            .storage_buffer_read_only(0, wgpu::ShaderStages::FRAGMENT)
-            .depth_texture(1, wgpu::ShaderStages::FRAGMENT)
-            .sampler_comparison(2, wgpu::ShaderStages::FRAGMENT)
+    fn builder_depth_helpers() {
+        let built = BindGroupLayoutBuilder::new("test_depth")
+            .depth_texture(0, wgpu::ShaderStages::FRAGMENT)
+            .sampler_comparison(1, wgpu::ShaderStages::FRAGMENT)
             .entries;
 
-        assert_eq!(built.len(), 3);
+        assert_eq!(built.len(), 2);
         assert!(matches!(
             built[0].ty,
-            wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Storage { read_only: true },
-                ..
-            }
-        ));
-        assert!(matches!(
-            built[1].ty,
             wgpu::BindingType::Texture {
                 sample_type: wgpu::TextureSampleType::Depth,
                 view_dimension: wgpu::TextureViewDimension::D2,
@@ -321,7 +305,7 @@ mod tests {
             }
         ));
         assert!(matches!(
-            built[2].ty,
+            built[1].ty,
             wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison)
         ));
     }

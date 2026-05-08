@@ -15,9 +15,10 @@ struct Uniforms {
 @group(0) @binding(0)
 var<uniform> uniforms: Uniforms;
 
-// terrain_type_lut[texture_id] = terrain_type (0-11).
+// terrain_type_lut[texture_id] = terrain_type (0-11). Packed as vec4<u32>
+// to keep this a uniform buffer; wgpu's GL backend exposes no fragment-stage SSBOs.
 @group(1) @binding(0)
-var<storage, read> terrain_type_lut: array<u32, 512>;
+var<uniform> terrain_type_lut: array<vec4<u32>, 128>;
 
 // Per-propulsion speed factors packed 12 floats into 3 vec4s, normalized (1.0 = 100%).
 @group(1) @binding(1)
@@ -57,8 +58,8 @@ fn get_speed(terrain_type: u32) -> f32 {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let tile_idx = u32(in.tile_index);
-    let terrain_type = terrain_type_lut[min(tile_idx, 511u)];
+    let tile_idx = min(u32(in.tile_index), 511u);
+    let terrain_type = terrain_type_lut[tile_idx / 4u][tile_idx % 4u];
     let speed = get_speed(terrain_type);
 
     // 50% maps to t=0 (red), 100% to t=0.5 (yellow), 150% to t=1 (green).

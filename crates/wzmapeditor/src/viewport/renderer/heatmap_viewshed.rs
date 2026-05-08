@@ -23,7 +23,7 @@ pub(super) fn build(
     target_format: wgpu::TextureFormat,
 ) -> HeatmapViewshedBuild {
     let heatmap_bind_group_layout = BindGroupLayoutBuilder::new("heatmap_bind_group_layout")
-        .storage_buffer_read_only(0, wgpu::ShaderStages::FRAGMENT)
+        .uniform_buffer(0, wgpu::ShaderStages::FRAGMENT)
         .uniform_buffer(1, wgpu::ShaderStages::FRAGMENT)
         .build(device);
 
@@ -52,7 +52,7 @@ pub(super) fn build(
     let lut_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("heatmap_lut_buffer"),
         size: 512 * 4,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
     let speed_buffer = device.create_buffer(&wgpu::BufferDescriptor {

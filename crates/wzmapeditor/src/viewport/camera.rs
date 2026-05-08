@@ -56,7 +56,7 @@ impl Camera {
             aspect: 16.0 / 9.0,
             near: 10.0,
             far: map_extent * 4.0,
-            move_speed: map_extent * 0.25, // Comfortable speed relative to map size
+            move_speed: map_extent * 0.25,
             look_sensitivity: DEFAULT_LOOK_SENSITIVITY,
         }
     }
@@ -171,7 +171,7 @@ impl Camera {
                     // the same final factor. A bare sign-based factor
                     // compounded once per frame, which ran away at 400 fps.
                     let factor = (raw_scroll * (1.2_f32.ln() / 50.0)).exp();
-                    self.move_speed = (self.move_speed * factor).clamp(50.0, 100_000.0);
+                    self.move_speed = (self.move_speed * factor).clamp(200.0, 50_000.0);
                 }
             } else if smooth_scroll != 0.0 {
                 let zoom_step = ((self.position.y - 10.0).max(50.0) * 0.10).clamp(20.0, 5_000.0);

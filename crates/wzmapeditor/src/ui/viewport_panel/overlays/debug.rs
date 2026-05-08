@@ -3,8 +3,9 @@ use std::fmt::Write as _;
 use egui::{Align2, Color32, CornerRadius, FontId, Margin, Rect, RichText, Stroke, Ui};
 
 use crate::app::{EditorApp, SelectedObject};
+use crate::viewport::camera::Camera;
 
-pub(super) fn draw_info_bar(ui: &mut Ui, app: &mut EditorApp, rect: Rect) {
+pub(super) fn draw_info_bar(ui: &mut Ui, app: &mut EditorApp, camera: Option<&Camera>, rect: Rect) {
     let Some(doc) = app.document.as_ref() else {
         return;
     };
@@ -15,6 +16,9 @@ pub(super) fn draw_info_bar(ui: &mut Ui, app: &mut EditorApp, rect: Rect) {
         "Map: {}x{} | {:?}",
         map.width, map.height, app.tool_state.active_tool
     );
+    if let Some(cam) = camera {
+        write!(info, " | Spd: {:.0}", cam.move_speed).unwrap();
+    }
     if let Some((tx, ty)) = app.hovered_tile {
         write!(info, " | Tile: ({tx}, {ty})").unwrap();
         if let Some(tile) = map.tile(tx, ty) {

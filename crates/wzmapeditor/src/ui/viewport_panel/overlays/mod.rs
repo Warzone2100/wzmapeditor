@@ -36,7 +36,7 @@ pub(super) fn draw_all(ui: &mut Ui, app: &mut EditorApp, camera: Option<&Camera>
     balance::draw(ui, app, camera, rect);
     tools::draw_script_label_drag(ui, app, camera, rect);
     tools::draw_stamp(ui, app, camera, rect);
-    debug::draw_info_bar(ui, app, rect);
+    debug::draw_info_bar(ui, app, camera, rect);
     tools::draw_vertex_sculpt(ui, app, camera, rect);
     tools::draw_mirror_axis(ui, app, camera, rect);
     tools::draw_tool_buttons(ui, app, rect);

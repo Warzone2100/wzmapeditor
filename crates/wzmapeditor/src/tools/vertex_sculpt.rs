@@ -623,6 +623,9 @@ mod tests {
             players: 0,
             tileset: String::new(),
             custom_templates_json: None,
+            author: None,
+            additional_authors: Vec::new(),
+            license: None,
         };
         let selected = vec![(4, 4)];
         let snap = build_drag_snapshot(&wzmap.map_data, &selected, 2);

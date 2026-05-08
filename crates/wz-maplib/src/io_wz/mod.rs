@@ -74,6 +74,12 @@ pub struct WzMap {
     /// round-trips the raw JSON bytes so the editor can ship custom droid
     /// templates alongside the map. `None` means the archive has no templates.
     pub custom_templates_json: Option<String>,
+    /// Primary author name from `level.json`'s `author` field.
+    pub author: Option<String>,
+    /// Secondary authors carried in `level.json`'s `author.additional-authors`.
+    pub additional_authors: Vec<String>,
+    /// SPDX license expression from `level.json`'s `license` field.
+    pub license: Option<String>,
 }
 
 impl WzMap {
@@ -89,6 +95,9 @@ impl WzMap {
             players: common::parse_player_count(name),
             tileset: "arizona".to_string(),
             custom_templates_json: None,
+            author: None,
+            additional_authors: Vec::new(),
+            license: None,
         }
     }
 
@@ -229,6 +238,9 @@ impl WzMap {
             players: self.players,
             tileset: self.tileset.clone(),
             custom_templates_json: self.custom_templates_json.clone(),
+            author: self.author.clone(),
+            additional_authors: self.additional_authors.clone(),
+            license: self.license.clone(),
         };
         (out, report)
     }
@@ -577,6 +589,56 @@ mod tests {
         assert_eq!(preview.heights[0], 200);
         assert_eq!(preview.heights[63], 510);
         assert_eq!(preview.terrain_types.len(), 3);
+
+        let _ = std::fs::remove_file(&wz_path);
+    }
+
+    #[test]
+    fn wz_archive_roundtrip_preserves_author_and_license() {
+        let mut map = make_test_map();
+        map.author = Some("Liam".to_string());
+        map.additional_authors = vec!["Olrox".to_string(), "Past-due".to_string()];
+        map.license = Some("CC-BY-SA-3.0 OR GPL-2.0-or-later".to_string());
+
+        let wz_path = std::env::temp_dir().join("wzmapeditor_test_metadata.wz");
+        let _ = std::fs::remove_file(&wz_path);
+
+        save_to_wz_archive(&map, &wz_path, OutputFormat::Ver3).unwrap();
+        let loaded = load_from_wz_archive(&wz_path).unwrap();
+
+        assert_eq!(loaded.author.as_deref(), Some("Liam"));
+        assert_eq!(loaded.additional_authors, vec!["Olrox", "Past-due"]);
+        assert_eq!(
+            loaded.license.as_deref(),
+            Some("CC-BY-SA-3.0 OR GPL-2.0-or-later")
+        );
+
+        let _ = std::fs::remove_file(&wz_path);
+    }
+
+    #[test]
+    fn level_json_includes_generator_with_version() {
+        let map = make_test_map();
+        let wz_path = std::env::temp_dir().join("wzmapeditor_test_generator.wz");
+        let _ = std::fs::remove_file(&wz_path);
+
+        save_to_wz_archive(&map, &wz_path, OutputFormat::Ver3).unwrap();
+
+        let mut archive = zip::ZipArchive::new(std::fs::File::open(&wz_path).unwrap()).unwrap();
+        let mut level_file = archive.by_name("level.json").unwrap();
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut level_file, &mut bytes).unwrap();
+        let level: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+
+        let generator = level["generator"].as_str().unwrap();
+        assert!(
+            generator.starts_with("wzmapeditor "),
+            "expected `wzmapeditor <version>`, got {generator:?}"
+        );
+        assert!(
+            generator.len() > "wzmapeditor ".len(),
+            "version must follow the prefix"
+        );
 
         let _ = std::fs::remove_file(&wz_path);
     }

@@ -860,6 +860,9 @@ mod tests {
             players: 1,
             tileset: String::new(),
             custom_templates_json: None,
+            author: None,
+            additional_authors: Vec::new(),
+            license: None,
         };
 
         // Camera looking straight down at the map center

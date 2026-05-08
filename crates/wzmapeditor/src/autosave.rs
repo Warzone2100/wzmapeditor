@@ -425,11 +425,11 @@ mod tests {
     fn reset_timer_prevents_immediate_save() {
         let mut state = AutoSaveState::new();
         state.last_save = Instant::now()
-            .checked_sub(std::time::Duration::from_secs(999))
-            .expect("Instant - 999s should not underflow");
-        assert!(state.should_save(60));
+            .checked_sub(std::time::Duration::from_secs(2))
+            .expect("Instant - 2s should not underflow");
+        assert!(state.should_save(1));
         state.reset_timer();
-        assert!(!state.should_save(60));
+        assert!(!state.should_save(1));
     }
 
     #[test]

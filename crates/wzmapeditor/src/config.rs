@@ -254,6 +254,10 @@ pub struct EditorConfig {
     /// UI theme preference. `System` follows the OS dark/light setting.
     #[serde(default)]
     pub theme_preference: ThemePreference,
+    /// Explicit path to the Warzone 2100 executable used by Test Map.
+    /// Overrides the auto-detection via `game_install_dir` when set.
+    #[serde(default)]
+    pub wz_executable: Option<PathBuf>,
 }
 
 impl Default for EditorConfig {
@@ -291,6 +295,7 @@ impl Default for EditorConfig {
             present_mode: PresentMode::default(),
             fps_limit: None,
             theme_preference: ThemePreference::default(),
+            wz_executable: None,
         }
     }
 }

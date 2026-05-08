@@ -178,6 +178,14 @@ impl Default for NewMapDialog {
     }
 }
 
+/// State for the "test map cannot be copied" permission-error dialog.
+#[derive(Debug, Default)]
+pub struct PermissionErrorDialog {
+    pub open: bool,
+    pub target_path: std::path::PathBuf,
+    pub error_message: String,
+}
+
 /// Which type and index of object is selected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SelectedObject {

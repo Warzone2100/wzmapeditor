@@ -85,32 +85,6 @@ pub fn show_menu_bar(ui: &mut Ui, app: &mut EditorApp) {
                 ui.close();
             }
             ui.separator();
-            if ui.button("Set Data Directory...").clicked() {
-                if let Some(dir) = rfd::FileDialog::new()
-                    .set_title("Select WZ2100 Data Directory")
-                    .pick_folder()
-                {
-                    let has_base_dir = dir.join("base").join("stats").exists()
-                        || dir.join("base").join("texpages").exists();
-                    let base_wz = dir.join("base.wz");
-
-                    if has_base_dir {
-                        app.config.game_install_dir = Some(dir.clone());
-                        app.set_data_dir(dir, ui.ctx());
-                    } else if base_wz.exists() {
-                        app.config.game_install_dir = Some(dir);
-                        app.config.save();
-                        app.start_base_wz_extraction(base_wz, ui.ctx());
-                    } else {
-                        app.log(format!(
-                            "No base.wz or base/ tree found in: {}",
-                            dir.display()
-                        ));
-                    }
-                }
-                ui.close();
-            }
-            ui.separator();
             if ui.button("Quit").clicked() {
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
             }

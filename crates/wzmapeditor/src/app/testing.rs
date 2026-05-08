@@ -27,15 +27,15 @@ pub(super) fn is_campaign_map(app: &EditorApp) -> bool {
         .is_some_and(|p| p.starts_with("wrf/"))
 }
 
-/// Whether a test game can be launched right now.
+/// Whether the test-map button should be enabled.
+///
+/// A missing executable is intentionally not a disabling condition: the
+/// click handler routes the user to Settings → Game so they can set one.
 pub(super) fn can_test_map(app: &EditorApp) -> bool {
-    app.document.is_some()
-        && app.config.game_install_dir.is_some()
-        && app.test_process.is_none()
-        && !is_campaign_map(app)
+    app.document.is_some() && app.test_process.is_none() && !is_campaign_map(app)
 }
 
-/// Tooltip explaining why the test map button is disabled.
+/// Tooltip explaining the test map button's current state.
 pub(super) fn test_map_tooltip(app: &EditorApp) -> &'static str {
     if app.test_process.is_some() {
         "Test game is already running"
@@ -43,11 +43,25 @@ pub(super) fn test_map_tooltip(app: &EditorApp) -> &'static str {
         "Load a map first"
     } else if is_campaign_map(app) {
         "Campaign maps cannot be test-launched (skirmish only)"
-    } else if app.config.game_install_dir.is_none() {
-        "Set the WZ2100 data directory first (File > Set Data Directory)"
+    } else if resolve_wz_executable(app).is_none() {
+        "Choose a Warzone 2100 executable in Settings \u{2192} Game (F5)"
     } else {
         "Launch map in WZ2100 (F5)"
     }
+}
+
+/// Resolve the executable used to launch test games.
+///
+/// Prefers the explicit `wz_executable` config setting; falls back to
+/// auto-detection from `game_install_dir`.
+pub(super) fn resolve_wz_executable(app: &EditorApp) -> Option<std::path::PathBuf> {
+    if let Some(ref exe) = app.config.wz_executable
+        && exe.exists()
+    {
+        return Some(exe.clone());
+    }
+    let install_dir = app.config.game_install_dir.as_ref()?;
+    crate::config::wz2100_executable(install_dir)
 }
 
 /// Launch the current map in WZ2100 as a skirmish test game.
@@ -60,20 +74,15 @@ pub(super) fn test_map(app: &mut EditorApp) {
         app.log("No map loaded");
         return;
     };
-    let Some(ref install_dir) = app.config.game_install_dir else {
-        app.log("No game install directory set");
-        return;
-    };
     if app.test_process.is_some() {
         app.log_warn("Test game is already running");
         return;
     }
 
-    let Some(exe) = crate::config::wz2100_executable(install_dir) else {
-        app.log(format!(
-            "Could not find warzone2100 executable in {}",
-            install_dir.display()
-        ));
+    let Some(exe) = resolve_wz_executable(app) else {
+        app.log("No Warzone 2100 executable set; opening Settings \u{2192} Game");
+        app.settings_open = true;
+        app.settings_page = crate::ui::settings_window::SettingsPage::Game;
         return;
     };
 
@@ -85,11 +94,11 @@ pub(super) fn test_map(app: &mut EditorApp) {
     let maps_dir = wz_config.join("maps");
     let tests_dir = wz_config.join("tests");
     if let Err(e) = std::fs::create_dir_all(&maps_dir) {
-        app.log(format!("Failed to create maps dir: {e}"));
+        report_test_map_io_error(app, &maps_dir, &e, "create maps dir");
         return;
     }
     if let Err(e) = std::fs::create_dir_all(&tests_dir) {
-        app.log(format!("Failed to create tests dir: {e}"));
+        report_test_map_io_error(app, &tests_dir, &e, "create tests dir");
         return;
     }
 
@@ -106,6 +115,11 @@ pub(super) fn test_map(app: &mut EditorApp) {
     if let Err(e) =
         wz_maplib::io_wz::save_to_wz_archive(&test_map, &wz_path, wz_maplib::OutputFormat::Ver3)
     {
+        if let wz_maplib::MapError::Io { ref source, .. } = e
+            && source.kind() == std::io::ErrorKind::PermissionDenied
+        {
+            open_permission_dialog(app, &wz_path, source);
+        }
         app.log(format!("Failed to save test map: {e}"));
         return;
     }
@@ -181,4 +195,22 @@ pub(super) fn build_skirmish_config(map_name: &str, players: u8) -> String {
     }
 
     serde_json::to_string_pretty(&config).expect("skirmish config serialization cannot fail")
+}
+
+fn report_test_map_io_error(
+    app: &mut EditorApp,
+    target: &std::path::Path,
+    error: &std::io::Error,
+    action: &str,
+) {
+    if error.kind() == std::io::ErrorKind::PermissionDenied {
+        open_permission_dialog(app, target, error);
+    }
+    app.log(format!("Failed to {action}: {error}"));
+}
+
+fn open_permission_dialog(app: &mut EditorApp, target: &std::path::Path, error: &std::io::Error) {
+    app.permission_error_dialog.open = true;
+    app.permission_error_dialog.target_path = target.to_path_buf();
+    app.permission_error_dialog.error_message = error.to_string();
 }

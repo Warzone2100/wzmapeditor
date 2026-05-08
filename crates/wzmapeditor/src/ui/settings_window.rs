@@ -11,6 +11,7 @@ pub enum SettingsPage {
     #[default]
     Viewport,
     Rendering,
+    Game,
     Problems,
     AutoSave,
     Keybindings,
@@ -18,9 +19,10 @@ pub enum SettingsPage {
 }
 
 impl SettingsPage {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Viewport,
         Self::Rendering,
+        Self::Game,
         Self::Problems,
         Self::AutoSave,
         Self::Keybindings,
@@ -31,6 +33,7 @@ impl SettingsPage {
         match self {
             Self::Viewport => "Viewport",
             Self::Rendering => "Rendering",
+            Self::Game => "Game",
             Self::Problems => "Problems",
             Self::AutoSave => "Auto-Save",
             Self::Keybindings => "Keybindings",
@@ -73,6 +76,7 @@ pub fn show_settings_window(ctx: &egui::Context, app: &mut EditorApp) {
                 ui.vertical(|ui| match app.settings_page {
                     SettingsPage::Viewport => show_viewport_settings(ui, app),
                     SettingsPage::Rendering => show_rendering_settings(ui, app),
+                    SettingsPage::Game => show_game_settings(ui, ctx, app),
                     SettingsPage::Problems => show_problems_settings(ui, app),
                     SettingsPage::AutoSave => show_autosave_settings(ui, app),
                     SettingsPage::Keybindings => show_keybindings_settings(ui, ctx, app),
@@ -287,6 +291,126 @@ fn relaunch_editor(ctx: &egui::Context) {
         Ok(_child) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
         Err(e) => log::error!("Failed to relaunch editor: {e}"),
     }
+}
+
+const WZ_EXE_HINT: &str = "Find this by opening Warzone 2100, going to Options, \
+                           and clicking 'Open Configuration Directory'.";
+
+fn show_game_settings(ui: &mut Ui, ctx: &egui::Context, app: &mut EditorApp) {
+    ui.heading("Game");
+    ui.label(RichText::new("Paths used to load assets and launch test games.").weak());
+    ui.add_space(8.0);
+
+    ui.label(RichText::new("Install directory").strong());
+    ui.add_space(2.0);
+    ui.horizontal(|ui| {
+        let resp = ui.add(
+            egui::TextEdit::singleline(&mut app.settings_install_dir_text)
+                .desired_width(360.0)
+                .hint_text("/path/to/warzone2100"),
+        );
+        if resp.lost_focus() {
+            commit_install_dir(app, ctx);
+        }
+        if ui.button("Browse...").clicked()
+            && let Some(dir) = rfd::FileDialog::new()
+                .set_title("Select WZ2100 Data Directory")
+                .pick_folder()
+        {
+            app.settings_install_dir_text = dir.display().to_string();
+            crate::ui::actions::apply_data_directory(app, ctx, dir);
+        }
+        if app.config.game_install_dir.is_some() && ui.button("Clear").clicked() {
+            app.config.game_install_dir = None;
+            app.settings_install_dir_text.clear();
+            app.config.save();
+        }
+    });
+
+    ui.add_space(14.0);
+    ui.separator();
+    ui.add_space(8.0);
+
+    ui.label(RichText::new("Test-game executable").strong());
+    ui.label(RichText::new(WZ_EXE_HINT).weak().small());
+    ui.add_space(2.0);
+    let auto_exe = app
+        .config
+        .game_install_dir
+        .as_ref()
+        .and_then(|d| crate::config::wz2100_executable(d));
+    ui.horizontal(|ui| {
+        let placeholder = auto_exe.as_ref().map_or_else(
+            || "/path/to/warzone2100".to_string(),
+            |p| p.display().to_string(),
+        );
+        let resp = ui.add(
+            egui::TextEdit::singleline(&mut app.settings_wz_exe_text)
+                .desired_width(360.0)
+                .hint_text(placeholder),
+        );
+        if resp.lost_focus() {
+            commit_wz_executable(app);
+        }
+        if ui.button("Browse...").clicked() {
+            let mut picker = rfd::FileDialog::new().set_title("Select Warzone 2100 executable");
+            #[cfg(target_os = "windows")]
+            {
+                picker = picker.add_filter("Executable", &["exe"]);
+            }
+            #[cfg(not(target_os = "windows"))]
+            let _ = &mut picker;
+            if let Some(path) = picker.pick_file() {
+                app.settings_wz_exe_text = path.display().to_string();
+                app.config.wz_executable = Some(path);
+                app.config.save();
+            }
+        }
+        if app.config.wz_executable.is_some() && ui.button("Clear").clicked() {
+            app.config.wz_executable = None;
+            app.settings_wz_exe_text.clear();
+            app.config.save();
+        }
+    });
+    if app.config.wz_executable.is_none()
+        && let Some(auto) = auto_exe
+    {
+        ui.label(
+            RichText::new(format!("Auto-detected: {}", auto.display()))
+                .weak()
+                .small(),
+        );
+    }
+}
+
+fn commit_install_dir(app: &mut EditorApp, ctx: &egui::Context) {
+    let trimmed = app.settings_install_dir_text.trim();
+    if trimmed.is_empty() {
+        if app.config.game_install_dir.is_some() {
+            app.config.game_install_dir = None;
+            app.config.save();
+        }
+        return;
+    }
+    let dir = std::path::PathBuf::from(trimmed);
+    if app.config.game_install_dir.as_deref() == Some(dir.as_path()) {
+        return;
+    }
+    crate::ui::actions::apply_data_directory(app, ctx, dir);
+}
+
+fn commit_wz_executable(app: &mut EditorApp) {
+    let trimmed = app.settings_wz_exe_text.trim();
+    let new_value = if trimmed.is_empty() {
+        None
+    } else {
+        Some(std::path::PathBuf::from(trimmed))
+    };
+    if app.config.wz_executable == new_value {
+        return;
+    }
+    app.config.wz_executable = new_value;
+    app.config.save();
 }
 
 fn show_problems_settings(ui: &mut Ui, app: &mut EditorApp) {

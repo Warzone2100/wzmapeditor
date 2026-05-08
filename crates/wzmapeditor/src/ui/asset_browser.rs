@@ -42,7 +42,7 @@ pub fn show_asset_browser_inner(
     custom_templates: Option<&crate::designer::CustomTemplateStore>,
 ) {
     let Some(stats) = stats else {
-        ui.label("No stats loaded. Set the WZ2100 data directory in File > Set Data Directory.");
+        ui.label("No stats loaded. Set the WZ2100 install directory in Settings \u{2192} Game.");
         return;
     };
 

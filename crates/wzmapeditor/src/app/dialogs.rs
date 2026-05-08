@@ -148,6 +148,55 @@ pub(super) fn show_new_map_dialog(ctx: &egui::Context, app: &mut EditorApp) {
     }
 }
 
+/// Permission-error dialog shown when writing into WZ2100's user-data
+/// directory (maps/tests) fails.
+pub(super) fn show_permission_error_dialog(ctx: &egui::Context, app: &mut EditorApp) {
+    let mut open = app.permission_error_dialog.open;
+    let mut dismiss = false;
+    egui::Window::new("Cannot Write to Warzone 2100 Directory")
+        .collapsible(false)
+        .resizable(false)
+        .open(&mut open)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ui.set_max_width(440.0);
+            ui.label("Could not write to Warzone 2100's user-data directory:");
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new(
+                    app.permission_error_dialog
+                        .target_path
+                        .display()
+                        .to_string(),
+                )
+                .monospace(),
+            );
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new(format!(
+                    "Reason: {}",
+                    app.permission_error_dialog.error_message
+                ))
+                .weak(),
+            );
+            ui.add_space(8.0);
+            ui.label(
+                "Make sure Warzone 2100 has been launched at least once so \
+                 its profile directory exists, then check that the folder \
+                 above is writable.",
+            );
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                if ui.button("OK").clicked() {
+                    dismiss = true;
+                }
+            });
+        });
+    if dismiss || !open {
+        app.permission_error_dialog.open = false;
+    }
+}
+
 /// Smallest map dimension allowed in the dialog (matches the WZ2100 engine
 /// requirement that both width and height are greater than 1).
 const MIN_RESIZE_DIM: u32 = 2;

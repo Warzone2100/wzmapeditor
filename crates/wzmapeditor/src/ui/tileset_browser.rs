@@ -145,7 +145,7 @@ pub fn show_tileset_browser(
     let Some(ts) = tileset else {
         ui.vertical_centered(|ui| {
             ui.label("No tileset loaded.");
-            ui.label("Use File > Set Data Directory to load tile textures.");
+            ui.label("Set the install directory in Settings \u{2192} Game to load tile textures.");
         });
         return GroundTypeAction::None;
     };

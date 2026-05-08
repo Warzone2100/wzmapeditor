@@ -132,6 +132,13 @@ pub struct EditorApp {
     pub test_process: Option<std::process::Child>,
     /// Temp files to clean up after the test game exits.
     test_temp_files: Vec<std::path::PathBuf>,
+    /// Modal shown when copying the test map to the WZ2100 maps directory
+    /// fails with `PermissionDenied`.
+    pub permission_error_dialog: PermissionErrorDialog,
+    /// Text-edit buffer for the install-directory field on the Settings → Game page.
+    pub settings_install_dir_text: String,
+    /// Text-edit buffer for the test-game executable field on Settings → Game.
+    pub settings_wz_exe_text: String,
     /// Most recent map validation results (`None` if never validated).
     pub validation_results: Option<wz_maplib::validate::ValidationResults>,
     /// Whether validation needs to be re-run (set when map content changes).
@@ -346,6 +353,16 @@ impl EditorApp {
         if let Some(vis) = config.minimap_visible {
             minimap.visible = vis;
         }
+        let settings_install_dir_text = config
+            .game_install_dir
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default();
+        let settings_wz_exe_text = config
+            .wz_executable
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default();
 
         Self {
             document: None,
@@ -402,6 +419,9 @@ impl EditorApp {
             startup_phase,
             test_process: None,
             test_temp_files: Vec::new(),
+            permission_error_dialog: PermissionErrorDialog::default(),
+            settings_install_dir_text,
+            settings_wz_exe_text,
             validation_results: None,
             validation_dirty: false,
             validation_cooldown: 0,
@@ -860,6 +880,9 @@ fn show_dialogs(ctx: &egui::Context, app: &mut EditorApp) {
     }
     if app.settings_open {
         ui::settings_window::show_settings_window(ctx, app);
+    }
+    if app.permission_error_dialog.open {
+        dialogs::show_permission_error_dialog(ctx, app);
     }
 
     app.poll_test_process();

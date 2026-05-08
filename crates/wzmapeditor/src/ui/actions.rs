@@ -35,6 +35,39 @@ pub(crate) fn save_current_or_prompt(app: &mut EditorApp) {
     }
 }
 
+/// Validate `dir` as a WZ2100 install/data directory and load it.
+///
+/// Triggers either `set_data_dir` (extracted layout) or
+/// `start_base_wz_extraction` (`base.wz` archive). If neither marker is
+/// present, logs an error and leaves the existing config alone.
+pub(crate) fn apply_data_directory(
+    app: &mut EditorApp,
+    ctx: &egui::Context,
+    dir: std::path::PathBuf,
+) {
+    if !dir.is_dir() {
+        app.log(format!("Not a directory: {}", dir.display()));
+        return;
+    }
+    let has_base_dir =
+        dir.join("base").join("stats").exists() || dir.join("base").join("texpages").exists();
+    let base_wz = dir.join("base.wz");
+
+    if has_base_dir {
+        app.config.game_install_dir = Some(dir.clone());
+        app.set_data_dir(dir, ctx);
+    } else if base_wz.exists() {
+        app.config.game_install_dir = Some(dir);
+        app.config.save();
+        app.start_base_wz_extraction(base_wz, ctx);
+    } else {
+        app.log(format!(
+            "No base.wz or base/ tree found in: {}",
+            dir.display()
+        ));
+    }
+}
+
 pub(crate) fn open_config_dir(app: &mut EditorApp) {
     let dir = crate::config::config_dir();
     if let Err(e) = std::fs::create_dir_all(&dir) {

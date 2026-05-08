@@ -26,6 +26,8 @@ pub struct Camera {
     pub move_speed: f32,
     /// Mouse look sensitivity.
     pub look_sensitivity: f32,
+    /// Largest map dimension in world units; bounds the scroll-zoom range.
+    pub map_extent: f32,
 }
 
 impl Camera {
@@ -58,6 +60,7 @@ impl Camera {
             far: map_extent * 4.0,
             move_speed: map_extent * 0.25,
             look_sensitivity: DEFAULT_LOOK_SENSITIVITY,
+            map_extent,
         }
     }
 
@@ -177,7 +180,10 @@ impl Camera {
                 let zoom_step = ((self.position.y - 10.0).max(50.0) * 0.10).clamp(20.0, 5_000.0);
                 let look_dir = self.forward_3d();
                 self.position += look_dir * smooth_scroll * zoom_step;
-                self.position.y = self.position.y.max(10.0);
+                let m = self.map_extent;
+                self.position.x = self.position.x.clamp(-m, m * 2.0);
+                self.position.z = self.position.z.clamp(-m, m * 2.0);
+                self.position.y = self.position.y.clamp(10.0, m * 2.0);
             }
         }
 

@@ -59,6 +59,12 @@ fn get_structure_size(stats: Option<&wz_stats::StatsDatabase>, name: &str) -> Op
     Some((s.width.unwrap_or(1), s.breadth.unwrap_or(1)))
 }
 
+/// Look up a feature's width/breadth from stats, defaulting to 1.
+fn get_feature_size(stats: Option<&wz_stats::StatsDatabase>, name: &str) -> Option<(u32, u32)> {
+    let f = stats?.features.get(name)?;
+    Some((f.width.unwrap_or(1), f.breadth.unwrap_or(1)))
+}
+
 /// Snap a feature or droid position to the nearest half-tile (64-unit grid).
 /// Allows placement at both tile centers and corners, matching WZ2100
 /// behaviour where features are not restricted to tile centers.
@@ -86,6 +92,9 @@ pub fn snap_placement_pos(
     };
 
     if let Some((w, b)) = get_structure_size(stats, name) {
+        let (sx, sz, _) = snap_building_position(world_x, world_z, w, b, placement_direction);
+        (sx, sz)
+    } else if let Some((w, b)) = get_feature_size(stats, name) {
         let (sx, sz, _) = snap_building_position(world_x, world_z, w, b, placement_direction);
         (sx, sz)
     } else {
@@ -393,4 +402,52 @@ fn build_occupancy_set(
     }
 
     occupied
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wz_maplib::constants::TILE_UNITS;
+    use wz_stats::StatsDatabase;
+    use wz_stats::features::FeatureStats;
+
+    fn stats_with_oil_resource() -> StatsDatabase {
+        let mut db = StatsDatabase::default();
+        db.features.insert(
+            "OilResource".to_string(),
+            FeatureStats {
+                id: "OilResource".to_string(),
+                name: "Oil Resource".to_string(),
+                feature_type: Some("OIL RESOURCE".to_string()),
+                hitpoints: None,
+                armour: None,
+                model: None,
+                imd_name: None,
+                base_imd: None,
+                line_of_sight: None,
+                start_visible: None,
+                width: Some(1),
+                breadth: Some(1),
+            },
+        );
+        db
+    }
+
+    #[test]
+    fn snap_placement_pos_centers_one_by_one_feature_on_tile() {
+        let stats = stats_with_oil_resource();
+        let half = TILE_UNITS / 2;
+
+        for cursor_x in [0u32, 10, 63, 64, 100, 127, 128, 200, 1000] {
+            for cursor_z in [0u32, 10, 63, 64, 100, 127, 128, 200, 1000] {
+                let (sx, sz) =
+                    snap_placement_pos(Some(&stats), Some("OilResource"), 0, cursor_x, cursor_z);
+                assert_eq!(
+                    (sx % TILE_UNITS, sz % TILE_UNITS),
+                    (half, half),
+                    "cursor ({cursor_x}, {cursor_z}) snapped to ({sx}, {sz})",
+                );
+            }
+        }
+    }
 }

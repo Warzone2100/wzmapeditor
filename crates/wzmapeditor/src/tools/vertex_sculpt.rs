@@ -657,8 +657,8 @@ mod tests {
     }
 
     use crate::map::history::EditHistory;
-    use crate::tools::trait_def::DirtyFlags;
     use crate::tools::ToolId;
+    use crate::tools::trait_def::DirtyFlags;
 
     #[test]
     fn vertex_sculpt_uses_mirror() {

@@ -150,23 +150,34 @@ impl Camera {
         }
 
         if response.hovered() {
-            let scroll = ctx.input(|i| i.smooth_scroll_delta.y);
+            let smooth_scroll = ctx.input(|i| i.smooth_scroll_delta.y);
+            let raw_scroll = ctx.input(|i| {
+                i.raw
+                    .events
+                    .iter()
+                    .filter_map(|e| match e {
+                        egui::Event::MouseWheel { delta, .. } => Some(delta.y),
+                        _ => None,
+                    })
+                    .sum::<f32>()
+            });
             let shift_held = ctx.input(|i| i.modifiers.shift);
-            if scroll != 0.0 {
-                if rmb_held || shift_held {
+            if rmb_held || shift_held {
+                if raw_scroll != 0.0 {
                     // Exponential per-unit scaling. ln(1.2)/50 gives ~1.2x
                     // per canonical wheel notch (~50 units), and because
                     // exp(a)*exp(b) = exp(a+b), spreading the same total
                     // scroll across more frames at high fps multiplies to
                     // the same final factor. A bare sign-based factor
                     // compounded once per frame, which ran away at 400 fps.
-                    let factor = (scroll * (1.2_f32.ln() / 50.0)).exp();
+                    let factor = (raw_scroll * (1.2_f32.ln() / 50.0)).exp();
                     self.move_speed = (self.move_speed * factor).clamp(50.0, 100_000.0);
-                } else {
-                    let look_dir = self.forward_3d();
-                    self.position += look_dir * scroll * self.move_speed * 0.003;
-                    self.position.y = self.position.y.max(10.0);
                 }
+            } else if smooth_scroll != 0.0 {
+                let zoom_step = ((self.position.y - 10.0).max(50.0) * 0.10).clamp(20.0, 5_000.0);
+                let look_dir = self.forward_3d();
+                self.position += look_dir * smooth_scroll * zoom_step;
+                self.position.y = self.position.y.max(10.0);
             }
         }
 

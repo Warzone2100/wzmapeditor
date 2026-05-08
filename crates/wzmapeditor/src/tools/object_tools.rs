@@ -101,6 +101,13 @@ impl Tool for ObjectSelectTool {
             .ctx
             .input(|i| (i.modifiers.shift, i.modifiers.command));
 
+        // `hover_pos` goes `None` once the cursor moves over a UI panel, which
+        // would silently drop a box-select released there. Fall back to the
+        // egui-wide latest pointer position so the gesture still resolves.
+        let cursor_pos = response
+            .hover_pos()
+            .or_else(|| response.ctx.input(|i| i.pointer.latest_pos()));
+
         if clicked && let Some(hover_pos) = response.hover_pos() {
             let pick_result = picker.as_ref().map(|p| {
                 picking::pick_object(
@@ -185,7 +192,7 @@ impl Tool for ObjectSelectTool {
         // gesture that owns it. Orange while Ctrl is held to signal
         // stamp-capture mode.
         if self.drag_select_active
-            && let (Some(start), Some(current)) = (self.drag_select_start, response.hover_pos())
+            && let (Some(start), Some(current)) = (self.drag_select_start, cursor_pos)
         {
             let sel_rect = egui::Rect::from_two_pos(start, current);
             let painter = response.ctx.layer_painter(egui::LayerId::new(
@@ -240,9 +247,7 @@ impl Tool for ObjectSelectTool {
             }
 
             if self.drag_select_active {
-                if let (Some(start), Some(end)) =
-                    (self.drag_select_start.take(), response.hover_pos())
-                {
+                if let (Some(start), Some(end)) = (self.drag_select_start.take(), cursor_pos) {
                     if ctrl_held {
                         let t1 = picking::screen_to_tile(start, rect, camera, &ctx.map.map_data);
                         let t2 = picking::screen_to_tile(end, rect, camera, &ctx.map.map_data);

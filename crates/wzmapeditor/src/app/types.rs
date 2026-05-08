@@ -47,7 +47,7 @@ impl std::fmt::Display for DockTab {
 /// Layout (left to right, top to bottom):
 /// - Far left column: Terrain on top, Tileset on bottom.
 /// - Center top: 3D viewport.
-/// - Center bottom: Assets, Output, Problems tabbed.
+/// - Center bottom: Assets | Output | Problems side-by-side.
 /// - Right of center: Hierarchy.
 /// - Far right column: Minimap on top, Properties+Balance tabbed below.
 pub fn default_dock_layout() -> DockState<DockTab> {
@@ -68,16 +68,13 @@ pub fn default_dock_layout() -> DockState<DockTab> {
     let [center_block, _hierarchy] =
         surface.split_right(center_block, 0.85, vec![DockTab::Hierarchy]);
 
-    // Bottom strip below viewport+hierarchy: Assets, Output, Problems tabbed.
-    let [center_block, _bottom] = surface.split_below(
-        center_block,
-        0.7,
-        vec![
-            DockTab::AssetBrowser,
-            DockTab::OutputLog,
-            DockTab::Validation,
-        ],
-    );
+    // Bottom strip below viewport+hierarchy: Assets | Output | Problems
+    // split into three equal columns.
+    let [center_block, bottom] =
+        surface.split_below(center_block, 0.7, vec![DockTab::AssetBrowser]);
+    let [_assets, output_and_problems] =
+        surface.split_right(bottom, 1.0 / 3.0, vec![DockTab::OutputLog]);
+    surface.split_right(output_and_problems, 0.5, vec![DockTab::Validation]);
 
     // Far-left tool column: Terrain on top, Tileset below. `split_left`
     // returns `[old, new]`; `new` is the left-side leaf containing Terrain.

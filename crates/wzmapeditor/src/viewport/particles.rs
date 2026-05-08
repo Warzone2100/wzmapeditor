@@ -56,7 +56,7 @@ const SNOW_HALF_W: f32 = 10.0;
 const SNOW_HALF_H: f32 = 10.0;
 
 /// Only sample terrain when particle Y is below this. WZ2100's
-/// `TILE_MAX_HEIGHT` = 255 * ELEVATION_SCALE(2) = 510.
+/// `TILE_MAX_HEIGHT` = 255 * `ELEVATION_SCALE(2)` = 510.
 const TILE_MAX_HEIGHT: f32 = 510.0;
 
 /// Cull particles beyond this distance from the camera (squared).

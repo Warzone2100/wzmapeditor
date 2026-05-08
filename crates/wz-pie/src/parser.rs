@@ -289,14 +289,12 @@ fn parse_polygon(line: &str, _version: u32) -> Result<PiePolygon, PieError> {
 
     let mut offset = 2 + num_verts;
 
-    if has_texanim && has_tex {
-        if offset + 4 <= parts.len() {
-            anim_frames = Some(parts[offset].parse().unwrap_or(1));
-            anim_rate = Some(parts[offset + 1].parse().unwrap_or(1));
-            anim_width = Some(parts[offset + 2].parse().unwrap_or(0.0));
-            anim_height = Some(parts[offset + 3].parse().unwrap_or(0.0));
-            offset += 4;
-        }
+    if has_texanim && has_tex && offset + 4 <= parts.len() {
+        anim_frames = Some(parts[offset].parse().unwrap_or(1));
+        anim_rate = Some(parts[offset + 1].parse().unwrap_or(1));
+        anim_width = Some(parts[offset + 2].parse().unwrap_or(0.0));
+        anim_height = Some(parts[offset + 3].parse().unwrap_or(0.0));
+        offset += 4;
     }
 
     if has_tex {

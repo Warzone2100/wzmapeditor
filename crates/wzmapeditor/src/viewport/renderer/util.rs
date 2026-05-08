@@ -137,7 +137,7 @@ pub(super) struct PipelineRecipe {
 }
 
 impl PipelineRecipe {
-    /// Opaque terrain. cull_mode=None because winding flips with camera angle.
+    /// Opaque terrain. `cull_mode=None` because winding flips with camera angle.
     pub const TERRAIN_OPAQUE: Self = Self {
         blend: Some(wgpu::BlendState::REPLACE),
         cull_mode: None,

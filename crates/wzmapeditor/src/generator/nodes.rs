@@ -163,13 +163,13 @@ fn place_players(
                 for &ni in &nodes[node_idx].neighbors.clone() {
                     used_grid[ni] = true;
                 }
-            } else if node_idx < nodes.len() {
-                if let Some(alt) = find_nearest_free(nodes, mx, my, grid_w, grid_h, &used_grid) {
-                    let player_id = player_nodes.len() as i8;
-                    nodes[alt].player = player_id;
-                    player_nodes.push(alt);
-                    used_grid[alt] = true;
-                }
+            } else if node_idx < nodes.len()
+                && let Some(alt) = find_nearest_free(nodes, mx, my, grid_w, grid_h, &used_grid)
+            {
+                let player_id = player_nodes.len() as i8;
+                nodes[alt].player = player_id;
+                player_nodes.push(alt);
+                used_grid[alt] = true;
             }
             // No-symmetry mode treats each group independently.
             if symmetry == MirrorMode::None && i == 0 {

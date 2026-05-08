@@ -38,12 +38,12 @@ impl GraphicsBackend {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PresentMode {
     /// Smart vsynced mode: resolves to `AutoVsync` (Fifo / `FifoRelaxed`) on every backend.
+    #[default]
     SmartVsync,
     /// Pick a vsynced mode the platform supports (Fifo on Vulkan, flip-model on DX12).
     AutoVsync,
-    /// Pick a non-vsynced mode the platform supports. Default: lowest input
-    /// latency out of the box, at the cost of possible tearing.
-    #[default]
+    /// Pick a non-vsynced mode the platform supports. Lower input latency at
+    /// the cost of possible tearing.
     AutoNoVsync,
     /// Block until vblank, queue is bounded. Always supported.
     Fifo,

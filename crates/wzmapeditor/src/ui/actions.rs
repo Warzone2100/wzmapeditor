@@ -60,17 +60,23 @@ pub(crate) fn open_config_dir(app: &mut EditorApp) {
 
 pub(crate) fn undo(app: &mut EditorApp) {
     if let Some(ref mut doc) = app.document {
-        doc.undo();
+        let dirties_objects = doc.undo();
         app.terrain_dirty = true;
         app.minimap.dirty = true;
+        if dirties_objects {
+            app.objects_dirty = true;
+        }
     }
 }
 
 pub(crate) fn redo(app: &mut EditorApp) {
     if let Some(ref mut doc) = app.document {
-        doc.redo();
+        let dirties_objects = doc.redo();
         app.terrain_dirty = true;
         app.minimap.dirty = true;
+        if dirties_objects {
+            app.objects_dirty = true;
+        }
     }
 }
 

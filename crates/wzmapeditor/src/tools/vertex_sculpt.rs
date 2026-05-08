@@ -337,6 +337,7 @@ impl VertexSculptTool {
         );
         ctx.mark_terrain_dirty();
         ctx.mark_minimap_dirty();
+        ctx.mark_objects_dirty();
         None
     }
 

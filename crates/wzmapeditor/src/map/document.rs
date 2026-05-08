@@ -32,14 +32,18 @@ impl MapDocument {
         }
     }
 
-    pub fn undo(&mut self) {
-        self.history.undo(&mut self.map);
+    /// Returns whether the replayed command dirties object instance buffers.
+    pub fn undo(&mut self) -> bool {
+        let dirties_objects = self.history.undo(&mut self.map);
         self.dirty = true;
+        dirties_objects
     }
 
-    pub fn redo(&mut self) {
-        self.history.redo(&mut self.map);
+    /// Returns whether the replayed command dirties object instance buffers.
+    pub fn redo(&mut self) -> bool {
+        let dirties_objects = self.history.redo(&mut self.map);
         self.dirty = true;
+        dirties_objects
     }
 
     /// Mark the document as cleanly saved. Auto-save preserves the dirty

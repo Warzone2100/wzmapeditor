@@ -6,6 +6,13 @@ use wz_maplib::WzMap;
 pub trait EditCommand: Send + Sync {
     fn execute(&self, map: &mut WzMap);
     fn undo(&self, map: &mut WzMap);
+
+    /// Whether replaying this command requires rebuilding object instance
+    /// buffers. Tile-height edits return `true` so undo/redo refreshes the
+    /// sampled Y of any objects sitting on the affected tiles.
+    fn dirties_objects(&self) -> bool {
+        false
+    }
 }
 
 /// Undo/redo history stack.
@@ -41,17 +48,27 @@ impl EditHistory {
         self.redo_stack.clear();
     }
 
-    pub fn undo(&mut self, map: &mut WzMap) {
+    /// Returns whether the replayed command dirties object instance buffers.
+    pub fn undo(&mut self, map: &mut WzMap) -> bool {
         if let Some(cmd) = self.undo_stack.pop() {
             cmd.undo(map);
+            let dirties_objects = cmd.dirties_objects();
             self.redo_stack.push(cmd);
+            dirties_objects
+        } else {
+            false
         }
     }
 
-    pub fn redo(&mut self, map: &mut WzMap) {
+    /// Returns whether the replayed command dirties object instance buffers.
+    pub fn redo(&mut self, map: &mut WzMap) -> bool {
         if let Some(cmd) = self.redo_stack.pop() {
             cmd.execute(map);
+            let dirties_objects = cmd.dirties_objects();
             self.undo_stack.push(cmd);
+            dirties_objects
+        } else {
+            false
         }
     }
 
@@ -93,6 +110,10 @@ impl EditCommand for CompoundCommand {
         for cmd in self.commands.iter().rev() {
             cmd.undo(map);
         }
+    }
+
+    fn dirties_objects(&self) -> bool {
+        self.commands.iter().any(|c| c.dirties_objects())
     }
 }
 

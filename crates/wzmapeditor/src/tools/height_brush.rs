@@ -39,6 +39,10 @@ impl EditCommand for HeightEditCommand {
             }
         }
     }
+
+    fn dirties_objects(&self) -> bool {
+        true
+    }
 }
 
 /// Returns `(coords, old_heights)` for in-bounds tiles within a circular radius.
@@ -245,6 +249,7 @@ impl HeightBrushTool {
         }
 
         ctx.mark_minimap_dirty();
+        ctx.mark_objects_dirty();
         *ctx.stroke_active = true;
         self.last_tile = Some((tx, ty));
         self.last_fire_time = Some(Instant::now());
@@ -283,6 +288,7 @@ impl HeightBrushTool {
         // Stroke-end cascade: shadow/water/lightmap/heatmap recompute in one pass.
         ctx.mark_terrain_dirty();
         ctx.mark_minimap_dirty();
+        ctx.mark_objects_dirty();
 
         Some(Box::new(HeightEditCommand {
             affected_tiles: coords,
@@ -522,6 +528,15 @@ mod tests {
         assert!(!*ctx.stroke_active, "release should clear stroke active");
         assert!(dirty.terrain, "release should mark terrain dirty");
         assert!(dirty.minimap, "release should mark minimap dirty");
+        assert!(
+            dirty.objects,
+            "height edits must refresh object instance buffers"
+        );
+        let cmd = cmd.unwrap();
+        assert!(
+            cmd.dirties_objects(),
+            "HeightEditCommand must report it dirties objects so undo/redo can refresh them"
+        );
     }
 
     #[test]

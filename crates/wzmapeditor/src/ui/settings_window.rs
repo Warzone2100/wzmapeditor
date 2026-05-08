@@ -12,6 +12,7 @@ pub enum SettingsPage {
     Viewport,
     Rendering,
     Game,
+    Maps,
     Problems,
     AutoSave,
     Keybindings,
@@ -19,10 +20,11 @@ pub enum SettingsPage {
 }
 
 impl SettingsPage {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Viewport,
         Self::Rendering,
         Self::Game,
+        Self::Maps,
         Self::Problems,
         Self::AutoSave,
         Self::Keybindings,
@@ -34,6 +36,7 @@ impl SettingsPage {
             Self::Viewport => "Viewport",
             Self::Rendering => "Rendering",
             Self::Game => "Game",
+            Self::Maps => "Maps",
             Self::Problems => "Problems",
             Self::AutoSave => "Auto-Save",
             Self::Keybindings => "Keybindings",
@@ -77,6 +80,7 @@ pub fn show_settings_window(ctx: &egui::Context, app: &mut EditorApp) {
                     SettingsPage::Viewport => show_viewport_settings(ui, app),
                     SettingsPage::Rendering => show_rendering_settings(ui, app),
                     SettingsPage::Game => show_game_settings(ui, ctx, app),
+                    SettingsPage::Maps => show_maps_settings(ui, app),
                     SettingsPage::Problems => show_problems_settings(ui, app),
                     SettingsPage::AutoSave => show_autosave_settings(ui, app),
                     SettingsPage::Keybindings => show_keybindings_settings(ui, ctx, app),
@@ -411,6 +415,26 @@ fn commit_wz_executable(app: &mut EditorApp) {
     }
     app.config.wz_executable = new_value;
     app.config.save();
+}
+
+fn show_maps_settings(ui: &mut Ui, app: &mut EditorApp) {
+    ui.heading("Maps");
+    ui.label(RichText::new("Defaults written into new maps' level.json.").weak());
+    ui.add_space(8.0);
+
+    ui.horizontal(|ui| {
+        ui.label("Default author:");
+        let mut value = app.config.default_author_name.clone().unwrap_or_default();
+        let resp = ui.add(
+            egui::TextEdit::singleline(&mut value)
+                .hint_text("Your name")
+                .desired_width(220.0),
+        );
+        if resp.changed() {
+            app.config.default_author_name = if value.is_empty() { None } else { Some(value) };
+            app.config.save();
+        }
+    });
 }
 
 fn show_problems_settings(ui: &mut Ui, app: &mut EditorApp) {

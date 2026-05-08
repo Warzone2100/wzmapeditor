@@ -174,15 +174,7 @@ pub(crate) fn save_as_wz(app: &mut EditorApp) {
     if app.document.is_none() {
         return;
     }
-    let filename = app.suggested_wz_filename();
-    if let Some(path) = rfd::FileDialog::new()
-        .set_title("Save As .wz Archive")
-        .set_file_name(filename)
-        .add_filter("WZ Map", &["wz"])
-        .save_file()
-    {
-        app.save_to_wz(&path);
-    }
+    crate::app::dialogs::open_save_as_metadata_dialog(app);
 }
 
 pub(crate) fn save_as_directory(app: &mut EditorApp) {

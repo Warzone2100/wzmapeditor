@@ -1,8 +1,9 @@
-//! Application dialog windows: recovery and new map.
+//! Application dialog windows: recovery, new map, save-as metadata.
 //!
 //! First-run setup lives on the launcher card; see `startup::splash_ui`.
 
 use super::{EditorApp, ResizeAnchor};
+use crate::config::{DEFAULT_LICENSE, LICENSE_OPTIONS};
 use wz_maplib::ResizeReport;
 use wz_maplib::constants::{MAP_MAX_WZ_EXPORT, world_coord};
 
@@ -614,4 +615,165 @@ fn mark_post_resize_dirty(app: &mut EditorApp, new_w: u32, new_h: u32) {
     let cx = world_coord((new_w / 2) as i32) as f32;
     let cy = world_coord((new_h / 2) as i32) as f32;
     app.focus_request = Some((cx, cy));
+}
+
+/// Open the Save As metadata dialog with fields prefilled from the loaded
+/// map. When the Settings "Default author" differs from the map's existing
+/// author, the existing author is pre-shifted into the additional-authors
+/// list so the user appears as the primary author.
+pub(crate) fn open_save_as_metadata_dialog(app: &mut EditorApp) {
+    let Some(ref doc) = app.document else {
+        return;
+    };
+    let map = &doc.map;
+    let settings_default = app.config.default_author_name.clone().unwrap_or_default();
+    let mut additional = map.additional_authors.clone();
+
+    let author = match (map.author.as_deref(), settings_default.is_empty()) {
+        (Some(loaded), false) if loaded != settings_default => {
+            if !additional.iter().any(|a| a == loaded) {
+                additional.insert(0, loaded.to_string());
+            }
+            settings_default
+        }
+        (Some(loaded), _) => loaded.to_string(),
+        (None, false) => settings_default,
+        (None, true) => String::new(),
+    };
+
+    let license = map
+        .license
+        .clone()
+        .unwrap_or_else(|| DEFAULT_LICENSE.to_string());
+    app.save_as_metadata_dialog = super::SaveAsMetadataDialog {
+        open: true,
+        author,
+        additional_authors: additional.join(", "),
+        license,
+        original_author: map.author.clone(),
+    };
+}
+
+pub(super) fn show_save_as_metadata_dialog(ctx: &egui::Context, app: &mut EditorApp) {
+    let mut open = app.save_as_metadata_dialog.open;
+    let mut save_clicked = false;
+
+    egui::Window::new("Save As")
+        .collapsible(false)
+        .resizable(false)
+        .open(&mut open)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Author:");
+                ui.add(
+                    egui::TextEdit::singleline(&mut app.save_as_metadata_dialog.author)
+                        .hint_text("Your name")
+                        .desired_width(260.0),
+                );
+            });
+            ui.horizontal(|ui| {
+                ui.label("Additional authors:");
+                ui.add(
+                    egui::TextEdit::singleline(&mut app.save_as_metadata_dialog.additional_authors)
+                        .hint_text("comma-separated")
+                        .desired_width(260.0),
+                );
+            });
+            ui.horizontal(|ui| {
+                ui.label("License:");
+                let current = app.save_as_metadata_dialog.license.clone();
+                let preserved_unknown = !LICENSE_OPTIONS.iter().any(|s| *s == current);
+                egui::ComboBox::from_id_salt("save_as_license_combo")
+                    .selected_text(if current.is_empty() {
+                        DEFAULT_LICENSE.to_string()
+                    } else {
+                        current.clone()
+                    })
+                    .show_ui(ui, |ui| {
+                        if preserved_unknown && !current.is_empty() {
+                            ui.selectable_value(
+                                &mut app.save_as_metadata_dialog.license,
+                                current,
+                                "Preserved (unknown SPDX)",
+                            );
+                        }
+                        for opt in LICENSE_OPTIONS {
+                            ui.selectable_value(
+                                &mut app.save_as_metadata_dialog.license,
+                                (*opt).to_string(),
+                                *opt,
+                            );
+                        }
+                    });
+            });
+
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui.button("Save\u{2026}").clicked() {
+                    save_clicked = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    app.save_as_metadata_dialog.open = false;
+                }
+            });
+        });
+
+    if app.save_as_metadata_dialog.open {
+        app.save_as_metadata_dialog.open = open;
+    }
+
+    if save_clicked {
+        commit_save_as_metadata(app);
+    }
+}
+
+fn commit_save_as_metadata(app: &mut EditorApp) {
+    let dialog = std::mem::take(&mut app.save_as_metadata_dialog);
+    if app.document.is_none() {
+        return;
+    }
+
+    let filename = app.suggested_wz_filename();
+    let Some(path) = rfd::FileDialog::new()
+        .set_title("Save As .wz Archive")
+        .set_file_name(filename)
+        .add_filter("WZ Map", &["wz"])
+        .save_file()
+    else {
+        return;
+    };
+
+    let trimmed_author = dialog.author.trim().to_string();
+    let mut additional: Vec<String> = dialog
+        .additional_authors
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if let Some(prev) = dialog.original_author {
+        let prev_trim = prev.trim();
+        if !prev_trim.is_empty()
+            && prev_trim != trimmed_author
+            && !additional.iter().any(|a| a == prev_trim)
+        {
+            additional.insert(0, prev_trim.to_string());
+        }
+    }
+
+    let doc = app.document.as_mut().expect("checked above");
+    doc.map.author = if trimmed_author.is_empty() {
+        None
+    } else {
+        Some(trimmed_author)
+    };
+    doc.map.additional_authors = additional;
+    doc.map.license = if dialog.license.trim().is_empty() {
+        None
+    } else {
+        Some(dialog.license.trim().to_string())
+    };
+
+    app.save_to_wz(&path);
 }

@@ -4,19 +4,25 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-/// User-selected graphics backend.
-///
-/// Only meaningful on Windows, where wgpu can target Direct3D 12, Vulkan,
-/// or OpenGL. Other platforms ignore this setting and use the platform
-/// default (Metal on macOS, Vulkan on Linux). `OpenGl` is not yet exposed
-/// in the settings UI; it exists so the launch sentinel can round-trip it
-/// once the backend support lands.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// User-selected graphics backend. Changing requires an app restart.
+/// See `available_for_platform` for the per-OS choices.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GraphicsBackend {
-    #[default]
     Vulkan,
     Dx12,
+    Metal,
     OpenGl,
+}
+
+impl Default for GraphicsBackend {
+    fn default() -> Self {
+        #[cfg(target_os = "windows")]
+        return Self::Vulkan;
+        #[cfg(target_os = "macos")]
+        return Self::Metal;
+        #[cfg(all(unix, not(target_os = "macos")))]
+        return Self::Vulkan;
+    }
 }
 
 impl GraphicsBackend {
@@ -25,7 +31,26 @@ impl GraphicsBackend {
         match self {
             Self::Dx12 => "Direct3D 12",
             Self::Vulkan => "Vulkan",
+            Self::Metal => "Metal",
             Self::OpenGl => "OpenGL",
+        }
+    }
+
+    /// Backends supported on this build target, in preferred order.
+    /// The first entry is the platform default.
+    pub fn available_for_platform() -> &'static [Self] {
+        #[cfg(target_os = "windows")]
+        {
+            &[Self::Vulkan, Self::Dx12, Self::OpenGl]
+        }
+        #[cfg(target_os = "macos")]
+        {
+            // wgpu's GL backend has no surface impl for macOS NSViews.
+            &[Self::Metal]
+        }
+        #[cfg(all(unix, not(target_os = "macos")))]
+        {
+            &[Self::Vulkan, Self::OpenGl]
         }
     }
 }
@@ -178,8 +203,8 @@ pub struct EditorConfig {
     /// tileset on startup instead of always defaulting to Arizona.
     #[serde(default)]
     pub last_tileset: Option<String>,
-    /// Graphics backend preference. Only applied on Windows; ignored on
-    /// other platforms. Changing this requires an app restart.
+    /// Graphics backend preference. Per-platform set; see
+    /// `GraphicsBackend::available_for_platform`. Changing requires restart.
     #[serde(default)]
     pub graphics_backend: GraphicsBackend,
     /// Swapchain present mode. Changing this requires an app restart.

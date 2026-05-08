@@ -18,6 +18,7 @@ pub fn consume() -> Option<GraphicsBackend> {
     match data.trim() {
         "Dx12" => Some(GraphicsBackend::Dx12),
         "Vulkan" => Some(GraphicsBackend::Vulkan),
+        "Metal" => Some(GraphicsBackend::Metal),
         "OpenGl" => Some(GraphicsBackend::OpenGl),
         _ => None,
     }
@@ -33,6 +34,7 @@ pub fn arm(backend: GraphicsBackend) {
     let label = match backend {
         GraphicsBackend::Dx12 => "Dx12",
         GraphicsBackend::Vulkan => "Vulkan",
+        GraphicsBackend::Metal => "Metal",
         GraphicsBackend::OpenGl => "OpenGl",
     };
     let _ = std::fs::write(&path, label);

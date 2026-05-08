@@ -46,13 +46,6 @@ fn main() -> eframe::Result {
     // Load the persisted config once at startup to pick the wgpu backend.
     // `EditorApp::new` reads it again; the second read is cheap and keeps
     // the app init path unchanged.
-    #[cfg_attr(
-        not(target_os = "windows"),
-        expect(
-            unused_mut,
-            reason = "launch-sentinel fallback only mutates on Windows"
-        )
-    )]
     let mut startup_config = config::EditorConfig::load();
 
     if let Some(prev) = launch_sentinel::consume() {
@@ -61,20 +54,16 @@ fn main() -> eframe::Result {
             prev.label(),
             config::config_dir().display()
         );
-        #[cfg(target_os = "windows")]
         if prev == startup_config.graphics_backend {
-            let alt = match prev {
-                config::GraphicsBackend::Dx12 => config::GraphicsBackend::Vulkan,
-                config::GraphicsBackend::Vulkan | config::GraphicsBackend::OpenGl => {
-                    config::GraphicsBackend::Dx12
-                }
-            };
-            log::warn!(
-                "Switching to {} for this launch and saving the choice. Change it in Settings > Rendering > Graphics Backend if you'd rather pick yourself.",
-                alt.label()
-            );
-            startup_config.graphics_backend = alt;
-            startup_config.save();
+            let alt = next_backend_after_crash(prev);
+            if alt != prev {
+                log::warn!(
+                    "Switching to {} for this launch and saving the choice. Change it in Settings > Rendering > Graphics Backend if you'd rather pick yourself.",
+                    alt.label()
+                );
+                startup_config.graphics_backend = alt;
+                startup_config.save();
+            }
         }
     }
 
@@ -141,22 +130,22 @@ fn main() -> eframe::Result {
     )
 }
 
-/// On Windows the user picks Direct3D 12 (default) or Vulkan. Other
-/// platforms ignore the choice and use the OS primary backend (Metal on
-/// macOS, Vulkan on Linux).
 fn backend_flags_for(cfg: &config::EditorConfig) -> wgpu::Backends {
-    #[cfg(target_os = "windows")]
-    {
-        match cfg.graphics_backend {
-            config::GraphicsBackend::Dx12 => eframe::wgpu::Backends::DX12,
-            config::GraphicsBackend::Vulkan => eframe::wgpu::Backends::VULKAN,
-            config::GraphicsBackend::OpenGl => eframe::wgpu::Backends::GL,
-        }
+    match cfg.graphics_backend {
+        config::GraphicsBackend::Dx12 => wgpu::Backends::DX12,
+        config::GraphicsBackend::Vulkan => wgpu::Backends::VULKAN,
+        config::GraphicsBackend::Metal => wgpu::Backends::METAL,
+        config::GraphicsBackend::OpenGl => wgpu::Backends::GL,
     }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = cfg;
-        wgpu::Backends::PRIMARY
+}
+
+/// Walk one step around the platform's backend preference list,
+/// snapping to the default if `prev` isn't in the list (cross-OS config copy).
+fn next_backend_after_crash(prev: config::GraphicsBackend) -> config::GraphicsBackend {
+    let chain = config::GraphicsBackend::available_for_platform();
+    match chain.iter().position(|b| *b == prev) {
+        Some(pos) => chain[(pos + 1) % chain.len()],
+        None => chain[0],
     }
 }
 

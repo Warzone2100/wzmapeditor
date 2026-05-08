@@ -4,9 +4,7 @@ use egui::{Color32, RichText, Ui};
 use wz_maplib::validate::{ValidationCategory, WarningRule};
 
 use crate::app::EditorApp;
-#[cfg(target_os = "windows")]
-use crate::config::GraphicsBackend;
-use crate::config::PresentMode;
+use crate::config::{GraphicsBackend, PresentMode};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SettingsPage {
@@ -138,8 +136,8 @@ fn show_rendering_settings(ui: &mut Ui, app: &mut EditorApp) {
             .suffix("\u{00b0}"),
     );
 
-    #[cfg(target_os = "windows")]
-    {
+    let backends = GraphicsBackend::available_for_platform();
+    if backends.len() > 1 {
         ui.separator();
         ui.label(RichText::new("Graphics Backend").strong());
         let mut changed = false;
@@ -149,7 +147,7 @@ fn show_rendering_settings(ui: &mut Ui, app: &mut EditorApp) {
             egui::ComboBox::from_id_salt("graphics_backend_combo")
                 .selected_text(current.label())
                 .show_ui(ui, |ui| {
-                    for backend in [GraphicsBackend::Vulkan, GraphicsBackend::Dx12] {
+                    for backend in backends.iter().copied() {
                         if ui
                             .selectable_label(current == backend, backend.label())
                             .clicked()

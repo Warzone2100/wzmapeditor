@@ -152,9 +152,7 @@ pub struct EditorApp {
     ///
     /// Captured from config at startup so the Rendering settings page can
     /// detect whether the user has changed `config.graphics_backend` since
-    /// launch and needs a restart for the change to take effect. Windows-only
-    /// because the preference has no effect on other platforms.
-    #[cfg(target_os = "windows")]
+    /// launch and needs a restart for the change to take effect.
     pub launched_graphics_backend: crate::config::GraphicsBackend,
     /// Present mode the swapchain was actually created with (cross-platform).
     /// Used by the Rendering settings page to show a "restart required"
@@ -340,7 +338,6 @@ impl EditorApp {
         let show_selection_hitboxes = config.show_selection_hitboxes.unwrap_or(false);
         let show_fps = config.show_fps.unwrap_or(false);
         let view_weather = config.view_weather.unwrap_or_default();
-        #[cfg(target_os = "windows")]
         let launched_graphics_backend = config.graphics_backend;
         let launched_present_mode = config.present_mode;
         let mut minimap = MinimapState::default();
@@ -411,7 +408,6 @@ impl EditorApp {
             settings_page: ui::settings_window::SettingsPage::default(),
             editor_icon: None,
             editor_icon_tried: false,
-            #[cfg(target_os = "windows")]
             launched_graphics_backend,
             launched_present_mode,
             keybinding_capture: None,

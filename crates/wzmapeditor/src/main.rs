@@ -18,6 +18,7 @@ mod keybindings;
 mod launch_sentinel;
 mod logger;
 mod map;
+mod panic_logger;
 mod startup;
 mod thumbnails;
 mod tools;
@@ -35,6 +36,7 @@ fn main() -> eframe::Result {
     if let Err(e) = logger::init(&log_file, panel_tx) {
         eprintln!("failed to install logger: {e}");
     }
+    panic_logger::install();
     log::info!("Starting wzmapeditor");
     log::info!("Log file: {}", log_file.display());
 

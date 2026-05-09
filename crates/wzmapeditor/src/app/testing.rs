@@ -80,13 +80,13 @@ pub(super) fn test_map(app: &mut EditorApp) {
     }
 
     let Some(exe) = resolve_wz_executable(app) else {
-        app.log("No Warzone 2100 executable set; opening Settings \u{2192} Game");
+        app.log("No Warzone 2100 executable set; opening Settings -> Game");
         app.settings_open = true;
         app.settings_page = crate::ui::settings_window::SettingsPage::Game;
         return;
     };
 
-    let Some(wz_config) = crate::config::wz2100_config_dir() else {
+    let Some(wz_config) = crate::config::resolve_wz_config_dir(&app.config) else {
         app.log("Could not detect WZ2100 user config directory");
         return;
     };

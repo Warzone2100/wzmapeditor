@@ -141,6 +141,8 @@ pub struct EditorApp {
     pub settings_install_dir_text: String,
     /// Text-edit buffer for the test-game executable field on Settings → Game.
     pub settings_wz_exe_text: String,
+    /// Text-edit buffer for the WZ configuration directory field on Settings → Game.
+    pub settings_wz_config_dir_text: String,
     /// Most recent map validation results (`None` if never validated).
     pub validation_results: Option<wz_maplib::validate::ValidationResults>,
     /// Whether validation needs to be re-run (set when map content changes).
@@ -365,6 +367,11 @@ impl EditorApp {
             .as_ref()
             .map(|p| p.display().to_string())
             .unwrap_or_default();
+        let settings_wz_config_dir_text = config
+            .wz_config_dir
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default();
 
         Self {
             document: None,
@@ -425,6 +432,7 @@ impl EditorApp {
             permission_error_dialog: PermissionErrorDialog::default(),
             settings_install_dir_text,
             settings_wz_exe_text,
+            settings_wz_config_dir_text,
             validation_results: None,
             validation_dirty: false,
             validation_cooldown: 0,

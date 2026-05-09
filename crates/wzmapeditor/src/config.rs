@@ -270,6 +270,10 @@ pub struct EditorConfig {
     /// Overrides the auto-detection via `game_install_dir` when set.
     #[serde(default)]
     pub wz_executable: Option<PathBuf>,
+    /// Override for the WZ2100 user configuration directory. When unset,
+    /// the editor falls back to `wz2100_config_dir()`.
+    #[serde(default)]
+    pub wz_config_dir: Option<PathBuf>,
     /// Default `level.json` author name used when saving a new map.
     #[serde(default)]
     pub default_author_name: Option<String>,
@@ -311,6 +315,7 @@ impl Default for EditorConfig {
             fps_limit: None,
             theme_preference: ThemePreference::default(),
             wz_executable: None,
+            wz_config_dir: None,
             default_author_name: None,
         }
     }
@@ -535,6 +540,15 @@ pub fn thumb_cache_dir() -> PathBuf {
 /// `%APPDATA%\wzmapeditor` on Windows, `~/.config/wzmapeditor` on Unix.
 pub fn config_dir() -> PathBuf {
     dirs_next().unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// Resolve the WZ2100 user config directory, preferring an explicit
+/// override from the editor's settings over auto-detection.
+pub fn resolve_wz_config_dir(config: &EditorConfig) -> Option<PathBuf> {
+    if let Some(ref dir) = config.wz_config_dir {
+        return Some(dir.clone());
+    }
+    wz2100_config_dir()
 }
 
 /// Platform-appropriate path where WZ2100 stores user data (maps, tests,

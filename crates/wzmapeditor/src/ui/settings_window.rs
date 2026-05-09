@@ -297,15 +297,15 @@ fn relaunch_editor(ctx: &egui::Context) {
     }
 }
 
-const WZ_EXE_HINT: &str = "Find this by opening Warzone 2100, going to Options, \
-                           and clicking 'Open Configuration Directory'.";
+const WZ_CONFIG_DIR_HINT: &str = "Find this by opening Warzone 2100, going to Options, \
+                                  and clicking 'Open Configuration Directory'.";
 
 fn show_game_settings(ui: &mut Ui, ctx: &egui::Context, app: &mut EditorApp) {
     ui.heading("Game");
     ui.label(RichText::new("Paths used to load assets and launch test games.").weak());
     ui.add_space(8.0);
 
-    ui.label(RichText::new("Install directory").strong());
+    ui.label(RichText::new("WZ Data Directory").strong());
     ui.add_space(2.0);
     ui.horizontal(|ui| {
         let resp = ui.add(
@@ -336,7 +336,6 @@ fn show_game_settings(ui: &mut Ui, ctx: &egui::Context, app: &mut EditorApp) {
     ui.add_space(8.0);
 
     ui.label(RichText::new("Test-game executable").strong());
-    ui.label(RichText::new(WZ_EXE_HINT).weak().small());
     ui.add_space(2.0);
     let auto_exe = app
         .config
@@ -385,6 +384,52 @@ fn show_game_settings(ui: &mut Ui, ctx: &egui::Context, app: &mut EditorApp) {
                 .small(),
         );
     }
+
+    ui.add_space(14.0);
+    ui.separator();
+    ui.add_space(8.0);
+
+    ui.label(RichText::new("WZ Configuration Directory").strong());
+    ui.label(RichText::new(WZ_CONFIG_DIR_HINT).weak().small());
+    ui.add_space(2.0);
+    let auto_config_dir = crate::config::wz2100_config_dir();
+    ui.horizontal(|ui| {
+        let placeholder = auto_config_dir.as_ref().map_or_else(
+            || "/path/to/Warzone 2100".to_string(),
+            |p| p.display().to_string(),
+        );
+        let resp = ui.add(
+            egui::TextEdit::singleline(&mut app.settings_wz_config_dir_text)
+                .desired_width(360.0)
+                .hint_text(placeholder),
+        );
+        if resp.lost_focus() {
+            commit_wz_config_dir(app);
+        }
+        if ui.button("Browse...").clicked()
+            && let Some(dir) = rfd::FileDialog::new()
+                .set_title("Select WZ2100 Configuration Directory")
+                .pick_folder()
+        {
+            app.settings_wz_config_dir_text = dir.display().to_string();
+            app.config.wz_config_dir = Some(dir);
+            app.config.save();
+        }
+        if app.config.wz_config_dir.is_some() && ui.button("Clear").clicked() {
+            app.config.wz_config_dir = None;
+            app.settings_wz_config_dir_text.clear();
+            app.config.save();
+        }
+    });
+    if app.config.wz_config_dir.is_none()
+        && let Some(auto) = auto_config_dir
+    {
+        ui.label(
+            RichText::new(format!("Auto-detected: {}", auto.display()))
+                .weak()
+                .small(),
+        );
+    }
 }
 
 fn commit_install_dir(app: &mut EditorApp, ctx: &egui::Context) {
@@ -414,6 +459,20 @@ fn commit_wz_executable(app: &mut EditorApp) {
         return;
     }
     app.config.wz_executable = new_value;
+    app.config.save();
+}
+
+fn commit_wz_config_dir(app: &mut EditorApp) {
+    let trimmed = app.settings_wz_config_dir_text.trim();
+    let new_value = if trimmed.is_empty() {
+        None
+    } else {
+        Some(std::path::PathBuf::from(trimmed))
+    };
+    if app.config.wz_config_dir == new_value {
+        return;
+    }
+    app.config.wz_config_dir = new_value;
     app.config.save();
 }
 

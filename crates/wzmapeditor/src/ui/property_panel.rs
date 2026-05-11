@@ -1,7 +1,7 @@
 //! Right sidebar context-sensitive property editor.
 //!
-//! Covers map metadata, the currently selected object, cursor info, and
-//! history. Tool settings live in the Terrain tool palette.
+//! Covers map metadata and the currently selected object. Tool settings
+//! live in the Terrain tool palette.
 
 use egui::Ui;
 
@@ -162,48 +162,6 @@ pub fn show_property_panel(ui: &mut Ui, app: &mut EditorApp) {
             crate::tools::ToolId::ScriptLabel => show_label_list(ui, app),
             _ => {}
         }
-    }
-
-    if let Some((tx, ty)) = app.hovered_tile {
-        let tile_info = app.document.as_ref().and_then(|doc| {
-            doc.map.map_data.tile(tx, ty).map(|tile| {
-                (
-                    tile.height,
-                    tile.texture_id(),
-                    tile.x_flip(),
-                    tile.y_flip(),
-                    tile.rotation(),
-                )
-            })
-        });
-        ui.separator();
-        ui.heading("Cursor");
-        ui.label(format!("Tile: ({tx}, {ty})"));
-        if let Some((h, tex, xf, yf, rot)) = tile_info {
-            ui.label(format!("Height: {h}"));
-            ui.label(format!("Texture ID: {tex}"));
-            ui.label(format!("Flags: flip_x={xf} flip_y={yf} rot={rot}"));
-        }
-    }
-
-    {
-        let Some(doc) = app.document.as_ref() else {
-            return;
-        };
-        ui.separator();
-        ui.label(format!(
-            "Undo: {} | Redo: {}",
-            if doc.history.can_undo() {
-                "available"
-            } else {
-                "empty"
-            },
-            if doc.history.can_redo() {
-                "available"
-            } else {
-                "empty"
-            },
-        ));
     }
 }
 

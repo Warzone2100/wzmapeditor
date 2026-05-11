@@ -1,7 +1,12 @@
 //! Dockable tab viewer - dispatches UI rendering for each panel tab.
 
+use egui::{Color32, RichText};
+
 use super::{DockTab, EditorApp};
 use crate::ui;
+
+const PROBLEM_COLOR: Color32 = Color32::from_rgb(255, 80, 80);
+const WARNING_COLOR: Color32 = Color32::from_rgb(255, 200, 60);
 
 /// Tab viewer for the full dockable layout.
 pub(super) struct DockTabViewer<'a> {
@@ -12,6 +17,24 @@ impl egui_dock::TabViewer for DockTabViewer<'_> {
     type Tab = DockTab;
 
     fn title(&mut self, tab: &mut Self::Tab) -> egui::WidgetText {
+        if matches!(tab, DockTab::Validation)
+            && let Some(results) = self.app.validation_results.as_ref()
+        {
+            let problems = results.problem_count();
+            let warnings = results.warning_count();
+            let total = problems + warnings;
+            if total > 0 {
+                let color = if problems > 0 {
+                    PROBLEM_COLOR
+                } else {
+                    WARNING_COLOR
+                };
+                return RichText::new(format!("Problems ({total})"))
+                    .color(color)
+                    .strong()
+                    .into();
+            }
+        }
         tab.to_string().into()
     }
 

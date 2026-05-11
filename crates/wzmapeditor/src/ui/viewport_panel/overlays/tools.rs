@@ -436,6 +436,116 @@ pub(super) fn draw_vertex_sculpt(
     }
 }
 
+pub(super) fn draw_line_preview(
+    ui: &mut Ui,
+    app: &mut EditorApp,
+    camera: Option<&Camera>,
+    rect: Rect,
+) {
+    let active = app.tool_state.active_tool;
+    let Some(tool) = app.tool_state.tools.get(&active) else {
+        return;
+    };
+    let Some(state) = tool.line_mode_state() else {
+        return;
+    };
+    let (Some(start), Some(hover)) = (state.start, state.hover) else {
+        return;
+    };
+    let radius = tool.brush_radius_tiles().unwrap_or(0);
+    let (Some(doc), Some(camera)) = (app.document.as_ref(), camera) else {
+        return;
+    };
+
+    let vp = camera.view_projection_matrix();
+    let painter = ui.painter_at(rect);
+    let map_data = &doc.map.map_data;
+
+    let mirror_mode = app.tool_state.mirror_mode;
+    let mut affected: rustc_hash::FxHashSet<(u32, u32)> = rustc_hash::FxHashSet::default();
+    for (cx, cy) in crate::tools::line_mode::bresenham_tiles(start, hover) {
+        for &(mx, my) in &crate::tools::mirror::mirror_points(
+            cx,
+            cy,
+            map_data.width,
+            map_data.height,
+            mirror_mode,
+        ) {
+            crate::tools::for_each_tile_in_radius(
+                mx,
+                my,
+                radius,
+                map_data.width,
+                map_data.height,
+                |tx, ty| {
+                    affected.insert((tx, ty));
+                },
+            );
+        }
+    }
+
+    // Let the shader-side brush highlight at the cursor (and its mirrored
+    // copies) show through: skip overlay tiles that fall inside the
+    // hover-position footprint on each mirror.
+    for &(mx, my) in &crate::tools::mirror::mirror_points(
+        hover.0,
+        hover.1,
+        map_data.width,
+        map_data.height,
+        mirror_mode,
+    ) {
+        crate::tools::for_each_tile_in_radius(
+            mx,
+            my,
+            radius,
+            map_data.width,
+            map_data.height,
+            |tx, ty| {
+                affected.remove(&(tx, ty));
+            },
+        );
+    }
+
+    let fill = Color32::from_rgba_unmultiplied(255, 220, 60, 60);
+    let stroke = Stroke::new(1.5, Color32::from_rgba_unmultiplied(255, 220, 60, 220));
+
+    // Tile corners near the camera near-plane produce tiny positive
+    // clip-space `w`; dividing through yields huge NDC values that egui
+    // paints as smears across the viewport. Mirror `draw_gateways`' guard.
+    let proj = |wx: f32, wz: f32| -> Option<Pos2> {
+        let wy = picking::sample_terrain_height_pub(map_data, wx, wz) + 5.0;
+        let c = vp * Vec4::new(wx, wy, wz, 1.0);
+        if c.w < GATEWAY_MIN_CLIP_W {
+            return None;
+        }
+        let nx = c.x / c.w;
+        let ny = c.y / c.w;
+        if nx.abs() > GATEWAY_MAX_NDC || ny.abs() > GATEWAY_MAX_NDC {
+            return None;
+        }
+        Some(Pos2::new(
+            rect.left() + (nx * 0.5 + 0.5) * rect.width(),
+            rect.top() + (-ny * 0.5 + 0.5) * rect.height(),
+        ))
+    };
+
+    for (tx, ty) in affected {
+        let wx1 = (tx as f32) * TILE_UNITS;
+        let wz1 = (ty as f32) * TILE_UNITS;
+        let wx2 = ((tx + 1) as f32) * TILE_UNITS;
+        let wz2 = ((ty + 1) as f32) * TILE_UNITS;
+        let corners = [
+            proj(wx1, wz1),
+            proj(wx2, wz1),
+            proj(wx2, wz2),
+            proj(wx1, wz2),
+        ];
+        if let [Some(a), Some(b), Some(c), Some(d)] = corners {
+            painter.add(Shape::convex_polygon(vec![a, b, c, d], fill, stroke));
+        }
+    }
+}
+
 pub(super) fn draw_mirror_axis(
     ui: &mut Ui,
     app: &mut EditorApp,

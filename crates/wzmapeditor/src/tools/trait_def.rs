@@ -13,6 +13,7 @@ use wz_maplib::objects::WorldPos;
 use crate::map::history::{EditCommand, EditHistory};
 
 use super::MirrorMode;
+use super::line_mode::LineModeState;
 
 /// Behaviour shared by every editor tool.
 ///
@@ -129,6 +130,20 @@ pub trait Tool: std::fmt::Debug + Send + Sync + Any {
     /// Brush footprint in tile units, when the tool draws a circular
     /// hover ring. Returning `None` (the default) means no ring.
     fn brush_radius_tiles(&self) -> Option<u32> {
+        None
+    }
+
+    /// Cancel any in-flight modal state (e.g. an armed Shift+click line
+    /// awaiting its second click). Triggered by the Esc key. Default is
+    /// a no-op; tools with modal state override it.
+    fn on_cancel(&mut self, ctx: &mut ToolCtx<'_>) {
+        let _ = ctx;
+    }
+
+    /// Read-only view of the tool's Shift+click line-draw state, if any.
+    /// The viewport renders the preview overlay from this. Tools without
+    /// line mode return `None` (the default).
+    fn line_mode_state(&self) -> Option<&LineModeState> {
         None
     }
 

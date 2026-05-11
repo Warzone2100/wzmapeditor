@@ -10,8 +10,9 @@ use wz_maplib::objects::WorldPos;
 
 use crate::map::history::EditCommand;
 use crate::tools::HeightBrushMode;
+use crate::tools::line_mode::{self, LineModeState};
 use crate::tools::mirror;
-use crate::tools::trait_def::{Tool, ToolCtx};
+use crate::tools::trait_def::{PointerInput, Tool, ToolCtx, default_world_pos_dispatch};
 
 /// Multiplier applied to brush strength to produce per-frame height deltas.
 const HEIGHT_RAISE_SCALE: f32 = 10.0;
@@ -192,6 +193,7 @@ pub(crate) struct HeightBrushTool {
     snapshot: HashMap<(u32, u32), u16>,
     last_tile: Option<(u32, u32)>,
     last_fire_time: Option<Instant>,
+    line: LineModeState,
 }
 
 impl Default for HeightBrushTool {
@@ -204,6 +206,7 @@ impl Default for HeightBrushTool {
             snapshot: HashMap::new(),
             last_tile: None,
             last_fire_time: None,
+            line: LineModeState::default(),
         }
     }
 }
@@ -253,6 +256,24 @@ impl HeightBrushTool {
         *ctx.stroke_active = true;
         self.last_tile = Some((tx, ty));
         self.last_fire_time = Some(Instant::now());
+    }
+
+    /// Only reachable in `HeightBrushMode::Set` — `on_pointer_input` short-
+    /// circuits the other modes before they can arm or commit a line.
+    fn commit_line_stroke(
+        &mut self,
+        ctx: &mut ToolCtx<'_>,
+        start: (u32, u32),
+        end: (u32, u32),
+    ) -> Option<Box<dyn EditCommand>> {
+        let w = ctx.map.map_data.width;
+        let h = ctx.map.map_data.height;
+        for (tx, ty) in line_mode::bresenham_tiles(start, end) {
+            if tx < w && ty < h {
+                self.fire(ctx, tx, ty);
+            }
+        }
+        self.flush(ctx)
     }
 
     /// Build one [`HeightEditCommand`] from the snapshot delta. `None` if
@@ -343,7 +364,69 @@ impl Tool for HeightBrushTool {
     }
 
     fn on_deactivated(&mut self, ctx: &mut ToolCtx<'_>) -> Option<Box<dyn EditCommand>> {
+        self.line.clear();
         self.flush(ctx)
+    }
+
+    fn on_pointer_input(
+        &mut self,
+        ctx: &mut ToolCtx<'_>,
+        input: PointerInput<'_>,
+    ) -> Option<Box<dyn EditCommand>> {
+        // Continuous modes (Raise/Lower/Smooth) don't translate to a
+        // one-shot line stamp — fall straight through to normal dispatch
+        // and ignore any stale armed state.
+        if self.mode != HeightBrushMode::Set {
+            self.line.clear();
+            return default_world_pos_dispatch(self, ctx, input);
+        }
+
+        let cursor_tile = input.response.hover_pos().and_then(|p| {
+            crate::viewport::picking::screen_to_tile(p, input.rect, input.camera, &ctx.map.map_data)
+        });
+
+        if self.line.armed() {
+            self.line.hover = cursor_tile;
+        }
+
+        let press_edge = input.response.drag_started_by(egui::PointerButton::Primary)
+            || input.response.clicked_by(egui::PointerButton::Primary);
+
+        if press_edge && let Some(tile) = cursor_tile {
+            if let Some(start) = self.line.start {
+                self.line.clear();
+                return self.commit_line_stroke(ctx, start, tile);
+            }
+            let shift = input.response.ctx.input(|i| i.modifiers.shift);
+            if shift {
+                self.line.start = Some(tile);
+                self.line.hover = Some(tile);
+                return None;
+            }
+        }
+
+        if self.line.armed() {
+            return None;
+        }
+
+        default_world_pos_dispatch(self, ctx, input)
+    }
+
+    fn on_secondary_click(&mut self, _ctx: &mut ToolCtx<'_>) -> bool {
+        if self.line.armed() {
+            self.line.clear();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn on_cancel(&mut self, _ctx: &mut ToolCtx<'_>) {
+        self.line.clear();
+    }
+
+    fn line_mode_state(&self) -> Option<&LineModeState> {
+        Some(&self.line)
     }
 
     fn brush_radius_tiles(&self) -> Option<u32> {

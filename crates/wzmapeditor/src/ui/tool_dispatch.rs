@@ -62,6 +62,7 @@ fn dispatch_pointer_input(
     camera: &crate::viewport::camera::Camera,
 ) {
     let secondary_clicked = response.clicked_by(egui::PointerButton::Secondary);
+    let escape_pressed = response.ctx.input(|i| i.key_pressed(egui::Key::Escape));
 
     let render_state = app.wgpu_render_state.clone();
 
@@ -155,6 +156,9 @@ fn dispatch_pointer_input(
         }
         if secondary_clicked {
             tool.on_secondary_click(&mut ctx);
+        }
+        if escape_pressed {
+            tool.on_cancel(&mut ctx);
         }
     }
 

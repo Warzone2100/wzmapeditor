@@ -4,6 +4,7 @@ pub mod gateway_tool;
 pub mod ground_type_brush;
 pub mod height_brush;
 pub mod label_tool;
+pub mod line_mode;
 pub mod mirror;
 pub mod object_edit;
 pub mod object_tools;

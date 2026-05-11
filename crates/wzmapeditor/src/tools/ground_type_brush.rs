@@ -7,9 +7,10 @@ use wz_maplib::map_data::{MapData, MapTile};
 use wz_maplib::objects::WorldPos;
 
 use crate::map::history::EditCommand;
+use crate::tools::line_mode::{self, LineModeState};
 use crate::tools::mirror;
 use crate::tools::texture_paint::TexturePaintCommand;
-use crate::tools::trait_def::{Tool, ToolCtx};
+use crate::tools::trait_def::{PointerInput, Tool, ToolCtx, default_world_pos_dispatch};
 
 /// A pool of tile indices for one ground type, grouped by terrain type.
 #[derive(Debug, Clone)]
@@ -229,6 +230,7 @@ pub(crate) struct GroundTypeBrushTool {
     last_tile: Option<(u32, u32)>,
     /// Suppresses the empty-pool log on every press in the same stroke.
     warned_empty_this_stroke: bool,
+    line: LineModeState,
 }
 
 impl GroundTypeBrushTool {
@@ -266,6 +268,22 @@ impl GroundTypeBrushTool {
         ctx.mark_minimap_dirty();
         *ctx.stroke_active = true;
         self.last_tile = Some((tx, ty));
+    }
+
+    fn commit_line_stroke(
+        &mut self,
+        ctx: &mut ToolCtx<'_>,
+        start: (u32, u32),
+        end: (u32, u32),
+    ) -> Option<Box<dyn EditCommand>> {
+        let w = ctx.map.map_data.width;
+        let h = ctx.map.map_data.height;
+        for (tx, ty) in line_mode::bresenham_tiles(start, end) {
+            if tx < w && ty < h {
+                self.fire(ctx, tx, ty);
+            }
+        }
+        self.flush(ctx)
     }
 
     /// Build one [`TexturePaintCommand`] from the snapshot delta. `None` if
@@ -366,7 +384,62 @@ impl Tool for GroundTypeBrushTool {
 
     fn on_deactivated(&mut self, ctx: &mut ToolCtx<'_>) -> Option<Box<dyn EditCommand>> {
         self.warned_empty_this_stroke = false;
+        self.line.clear();
         self.flush(ctx)
+    }
+
+    fn on_pointer_input(
+        &mut self,
+        ctx: &mut ToolCtx<'_>,
+        input: PointerInput<'_>,
+    ) -> Option<Box<dyn EditCommand>> {
+        let cursor_tile = input.response.hover_pos().and_then(|p| {
+            crate::viewport::picking::screen_to_tile(p, input.rect, input.camera, &ctx.map.map_data)
+        });
+
+        if self.line.armed() {
+            self.line.hover = cursor_tile;
+        }
+
+        let press_edge = input.response.drag_started_by(egui::PointerButton::Primary)
+            || input.response.clicked_by(egui::PointerButton::Primary);
+
+        if press_edge && let Some(tile) = cursor_tile {
+            if let Some(start) = self.line.start {
+                self.line.clear();
+                self.warned_empty_this_stroke = false;
+                return self.commit_line_stroke(ctx, start, tile);
+            }
+            let shift = input.response.ctx.input(|i| i.modifiers.shift);
+            if shift {
+                self.line.start = Some(tile);
+                self.line.hover = Some(tile);
+                return None;
+            }
+        }
+
+        if self.line.armed() {
+            return None;
+        }
+
+        default_world_pos_dispatch(self, ctx, input)
+    }
+
+    fn on_secondary_click(&mut self, _ctx: &mut ToolCtx<'_>) -> bool {
+        if self.line.armed() {
+            self.line.clear();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn on_cancel(&mut self, _ctx: &mut ToolCtx<'_>) {
+        self.line.clear();
+    }
+
+    fn line_mode_state(&self) -> Option<&LineModeState> {
+        Some(&self.line)
     }
 
     fn brush_radius_tiles(&self) -> Option<u32> {

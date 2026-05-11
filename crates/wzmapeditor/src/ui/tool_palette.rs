@@ -11,9 +11,13 @@ use crate::keybindings::{Action, Keymap};
 use crate::tools::{ToolId, ToolState};
 
 pub fn show_tool_palette(ui: &mut Ui, app: &mut EditorApp) {
-    show_tool_buttons(ui, &mut app.tool_state, &app.config.keymap);
-    ui.separator();
-    show_tool_settings(ui, app);
+    egui::ScrollArea::both()
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            show_tool_buttons(ui, &mut app.tool_state, &app.config.keymap);
+            ui.separator();
+            show_tool_settings(ui, app);
+        });
 }
 
 fn show_tool_buttons(ui: &mut Ui, tool_state: &mut ToolState, keymap: &Keymap) {

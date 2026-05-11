@@ -696,7 +696,6 @@ mod tests {
             far: 10000.0,
             move_speed: 1.0,
             look_sensitivity: 1.0,
-            map_extent: 8192.0,
         };
 
         // Screen center of a 800x800 viewport
@@ -788,7 +787,6 @@ mod tests {
             far: 100.0,
             move_speed: 1.0,
             look_sensitivity: 1.0,
-            map_extent: 8192.0,
         };
         let vp = camera.view_projection_matrix();
         let viewport = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 800.0));
@@ -823,7 +821,6 @@ mod tests {
             far: 100.0,
             move_speed: 1.0,
             look_sensitivity: 1.0,
-            map_extent: 8192.0,
         };
         let vp = camera.view_projection_matrix();
         let viewport = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 800.0));
@@ -876,7 +873,6 @@ mod tests {
             far: 10000.0,
             move_speed: 1.0,
             look_sensitivity: 1.0,
-            map_extent: 8192.0,
         };
 
         let viewport = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 800.0));

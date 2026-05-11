@@ -26,8 +26,6 @@ pub struct Camera {
     pub move_speed: f32,
     /// Mouse look sensitivity.
     pub look_sensitivity: f32,
-    /// Largest map dimension in world units; bounds the scroll-zoom range.
-    pub map_extent: f32,
 }
 
 impl Camera {
@@ -60,7 +58,6 @@ impl Camera {
             far: map_extent * 4.0,
             move_speed: map_extent * 0.25,
             look_sensitivity: DEFAULT_LOOK_SENSITIVITY,
-            map_extent,
         }
     }
 
@@ -128,7 +125,7 @@ impl Camera {
     /// - Hold RMB + WASD/QE to fly
     /// - Hold RMB + drag to look around
     /// - Middle-click drag to pan
-    /// - Scroll to zoom (move forward/back along look direction)
+    /// - RMB or Shift + scroll to change camera move speed
     /// - Shift for faster movement
     pub fn process_input(&mut self, response: &egui::Response, ctx: &egui::Context, dt: f32) {
         let rmb_held = response.dragged_by(egui::PointerButton::Secondary)
@@ -153,7 +150,6 @@ impl Camera {
         }
 
         if response.hovered() {
-            let smooth_scroll = ctx.input(|i| i.smooth_scroll_delta.y);
             let raw_scroll = ctx.input(|i| {
                 i.raw
                     .events
@@ -165,25 +161,15 @@ impl Camera {
                     .sum::<f32>()
             });
             let shift_held = ctx.input(|i| i.modifiers.shift);
-            if rmb_held || shift_held {
-                if raw_scroll != 0.0 {
-                    // Exponential per-unit scaling. ln(1.2)/50 gives ~1.2x
-                    // per canonical wheel notch (~50 units), and because
-                    // exp(a)*exp(b) = exp(a+b), spreading the same total
-                    // scroll across more frames at high fps multiplies to
-                    // the same final factor. A bare sign-based factor
-                    // compounded once per frame, which ran away at 400 fps.
-                    let factor = (raw_scroll * (1.2_f32.ln() / 50.0)).exp();
-                    self.move_speed = (self.move_speed * factor).clamp(200.0, 50_000.0);
-                }
-            } else if smooth_scroll != 0.0 {
-                let zoom_step = ((self.position.y - 10.0).max(50.0) * 0.10).clamp(20.0, 5_000.0);
-                let look_dir = self.forward_3d();
-                self.position += look_dir * smooth_scroll * zoom_step;
-                let m = self.map_extent;
-                self.position.x = self.position.x.clamp(-m, m * 2.0);
-                self.position.z = self.position.z.clamp(-m, m * 2.0);
-                self.position.y = self.position.y.clamp(10.0, m * 2.0);
+            if (rmb_held || shift_held) && raw_scroll != 0.0 {
+                // Exponential per-unit scaling. ln(1.2)/50 gives ~1.2x
+                // per canonical wheel notch (~50 units), and because
+                // exp(a)*exp(b) = exp(a+b), spreading the same total
+                // scroll across more frames at high fps multiplies to
+                // the same final factor. A bare sign-based factor
+                // compounded once per frame, which ran away at 400 fps.
+                let factor = (raw_scroll * (1.2_f32.ln() / 50.0)).exp();
+                self.move_speed = (self.move_speed * factor).clamp(200.0, 50_000.0);
             }
         }
 

@@ -146,15 +146,24 @@ pub fn show_menu_bar(ui: &mut Ui, app: &mut EditorApp) {
             ui.label("Terrain Quality");
             let current = app.render_settings.terrain_quality;
             for mode in crate::viewport::renderer::TerrainQuality::ALL {
-                let enabled = mode != crate::viewport::renderer::TerrainQuality::Medium;
-                if ui
-                    .add_enabled(
-                        enabled,
-                        egui::RadioButton::new(current == mode, mode.label()),
-                    )
-                    .on_disabled_hover_text("Medium quality is not yet supported")
-                    .clicked()
-                {
+                use crate::viewport::renderer::TerrainQuality;
+                let disabled_reason = match mode {
+                    TerrainQuality::Medium => Some("Medium quality is not yet supported"),
+                    TerrainQuality::High if !app.has_hq_textures => {
+                        Some("Install high.wz (terrain_overrides) for Remastered (HQ) textures")
+                    }
+                    _ => None,
+                };
+                let resp = ui.add_enabled(
+                    disabled_reason.is_none(),
+                    egui::RadioButton::new(current == mode, mode.label()),
+                );
+                let resp = if let Some(reason) = disabled_reason {
+                    resp.on_disabled_hover_text(reason)
+                } else {
+                    resp
+                };
+                if resp.clicked() {
                     app.render_settings.terrain_quality = mode;
                     app.terrain_dirty = true;
                     ui.close();

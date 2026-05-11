@@ -194,6 +194,15 @@ pub(super) fn start_ground_precache(app: &mut EditorApp) {
 /// egui `TextureHandle`s while the renderer still references them, causing
 /// a wgpu validation error ("Texture has been destroyed").
 pub(super) fn set_data_dir(app: &mut EditorApp, dir: std::path::PathBuf, _ctx: &egui::Context) {
+    app.has_hq_textures = detect_hq_textures(&dir);
+    if !app.has_hq_textures
+        && app.render_settings.terrain_quality == crate::viewport::renderer::TerrainQuality::High
+    {
+        log::info!("high.wz textures unavailable; falling back to Classic terrain quality");
+        app.render_settings.terrain_quality = crate::viewport::renderer::TerrainQuality::Classic;
+        app.terrain_dirty = true;
+    }
+
     // If the path is unchanged (common after a config-load failure, where
     // the user is re-pointed at the same cache directory), keep everything
     // on-disk: thumbnails, ground texture cache, tileset textures. Only a
@@ -215,6 +224,18 @@ pub(super) fn set_data_dir(app: &mut EditorApp, dir: std::path::PathBuf, _ctx: &
     app.model_thumbnails.invalidate_all();
     let _ = std::fs::remove_file(crate::config::ground_cache_dir().join(".precache_v9"));
     app.rt.ground_precache_attempted = false;
+}
+
+/// Returns true if `high.wz` was extracted into `data_dir`, detected by the
+/// presence of any `tertiles*hw-256` decal directory under `base/texpages/`.
+fn detect_hq_textures(data_dir: &std::path::Path) -> bool {
+    let texpages = data_dir.join("base").join("texpages");
+    for name in ["tertilesc1hw-256", "tertilesc2hw-256", "tertilesc3hw-256"] {
+        if texpages.join(name).is_dir() {
+            return true;
+        }
+    }
+    false
 }
 
 /// Begin background extraction of `base.wz` into the persistent cache directory.

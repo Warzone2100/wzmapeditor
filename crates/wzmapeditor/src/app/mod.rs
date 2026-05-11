@@ -214,6 +214,9 @@ pub struct EditorApp {
     /// `update()` call count, used to detect the first surviving frame
     /// so the launch sentinel can be cleared.
     pub update_count: u32,
+    /// Whether HQ terrain textures (`high.wz` `hw-256` decals) are present
+    /// on disk. Drives the "Remastered (HQ)" radio's enabled state.
+    pub has_hq_textures: bool,
 }
 
 impl std::fmt::Debug for EditorApp {
@@ -469,6 +472,7 @@ impl EditorApp {
             window_focused: true,
             last_paint_at: None,
             update_count: 0,
+            has_hq_textures: false,
         }
     }
 

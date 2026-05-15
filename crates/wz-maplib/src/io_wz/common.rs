@@ -14,13 +14,15 @@ use crate::terrain_types::TerrainTypeData;
 
 /// Parse the player count from a WZ2100 map filename convention.
 ///
-/// Maps named like "2c-MapName" have 2 players, "8c-Foo" has 8, etc.
+/// Maps named like "2c-MapName" or "2p-AValley" have 2 players, etc.
 pub(super) fn parse_player_count(name: &str) -> u8 {
-    if let Some(idx) = name.find("c-")
-        && idx > 0
-        && let Ok(n) = name[..idx].parse::<u8>()
-    {
-        return n;
+    for sep in ["c-", "p-"] {
+        if let Some(idx) = name.find(sep)
+            && idx > 0
+            && let Ok(n) = name[..idx].parse::<u8>()
+        {
+            return n;
+        }
     }
     0
 }

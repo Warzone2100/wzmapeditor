@@ -182,16 +182,16 @@ pub(super) fn suggested_wz_filename(app: &EditorApp) -> String {
         .document
         .as_ref()
         .map_or("NewMap", |d| d.map.map_name.as_str());
-    // Strip existing "Nc-" prefix to avoid doubling.
-    let base = if let Some(idx) = raw_name.find("c-") {
-        if idx > 0 && raw_name[..idx].chars().all(|c| c.is_ascii_digit()) {
-            &raw_name[idx + 2..]
-        } else {
-            raw_name
-        }
-    } else {
-        raw_name
-    };
+    // Strip an existing "Nc-" or "Np-" prefix to avoid doubling.
+    let base = ["c-", "p-"]
+        .into_iter()
+        .find_map(|sep| {
+            raw_name.find(sep).and_then(|idx| {
+                (idx > 0 && raw_name[..idx].chars().all(|c| c.is_ascii_digit()))
+                    .then(|| &raw_name[idx + sep.len()..])
+            })
+        })
+        .unwrap_or(raw_name);
     format!("{}c-{base}.wz", app.map_players)
 }
 
@@ -248,14 +248,17 @@ pub(super) fn tick_autosave(app: &mut EditorApp) {
     log::info!("Auto-save started");
 }
 
-/// Parse player count from a WZ2100 map name prefix (e.g. "2c-MapName" -> 2).
+/// Parse player count from a WZ2100 map name prefix (e.g. "2c-MapName"
+/// or "2p-AValley" -> 2).
 pub(super) fn parse_player_count_from_name(name: &str) -> u8 {
-    if let Some(idx) = name.find("c-")
-        && idx > 0
-        && let Ok(n) = name[..idx].parse::<u8>()
-        && n > 0
-    {
-        return n;
+    for sep in ["c-", "p-"] {
+        if let Some(idx) = name.find(sep)
+            && idx > 0
+            && let Ok(n) = name[..idx].parse::<u8>()
+            && n > 0
+        {
+            return n;
+        }
     }
     // Default to 2 for maps without the convention.
     2

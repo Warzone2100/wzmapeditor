@@ -24,17 +24,20 @@ pub fn is_wall_or_defense(structure_type: Option<&str>) -> bool {
     )
 }
 
-/// Strip the "Nc-" player count prefix from a map name.
+/// Strip the player-count prefix from a map name.
 ///
-/// WZ2100 convention: filenames are `{N}c-{BaseName}` where N is the player count.
-/// E.g. `2c-Roughness` -> `Roughness`, `10c-WaterLoop` -> `WaterLoop`.
-/// Returns the full name unchanged if no prefix is found.
+/// WZ2100 convention: filenames are `{N}c-{BaseName}` or `{N}p-{BaseName}`
+/// where N is the player count. E.g. `2c-Roughness` -> `Roughness`,
+/// `2p-AValley` -> `AValley`. Returns the full name unchanged if no prefix
+/// is found.
 pub(super) fn strip_player_prefix(name: &str) -> &str {
-    if let Some(idx) = name.find("c-")
-        && idx > 0
-        && name[..idx].chars().all(|c| c.is_ascii_digit())
-    {
-        return &name[idx + 2..];
+    for sep in ["c-", "p-"] {
+        if let Some(idx) = name.find(sep)
+            && idx > 0
+            && name[..idx].chars().all(|c| c.is_ascii_digit())
+        {
+            return &name[idx + sep.len()..];
+        }
     }
     name
 }
@@ -82,6 +85,12 @@ mod tests {
     #[test]
     fn strip_prefix_hyphen_in_base_name() {
         assert_eq!(strip_player_prefix("4c-My-Map"), "My-Map");
+    }
+
+    #[test]
+    fn strip_prefix_p_form() {
+        assert_eq!(strip_player_prefix("2p-AValley"), "AValley");
+        assert_eq!(strip_player_prefix("10p-WaterLoop"), "WaterLoop");
     }
 
     #[test]

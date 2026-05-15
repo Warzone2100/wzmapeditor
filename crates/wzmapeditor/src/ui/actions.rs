@@ -9,6 +9,15 @@ pub(crate) fn open_wz_dialog(app: &mut EditorApp) {
         .add_filter("WZ Map", &["wz"])
         .pick_file()
     {
+        // Script maps need a seed; route them through the seed-prompt dialog
+        // instead of trying the static-map loader first.
+        if matches!(
+            wz_maplib::io_wz::classify_wz_archive(&path),
+            wz_maplib::io_wz::WzArchiveKind::ScriptMap
+        ) {
+            open_script_seed_dialog(app, path);
+            return;
+        }
         match wz_maplib::io_wz::load_from_wz_archive(&path) {
             Ok(map) => {
                 let save = Some(path.clone());
@@ -17,6 +26,28 @@ pub(crate) fn open_wz_dialog(app: &mut EditorApp) {
             Err(e) => app.report_wz_load_error(&path, &e),
         }
     }
+}
+
+/// Open the seed-prompt dialog for a known script-map path. Reused by the
+/// "Re-roll seed" toolbar action.
+pub(crate) fn open_script_seed_dialog(app: &mut EditorApp, path: std::path::PathBuf) {
+    let seed = seed_suggestion();
+    app.script_seed_dialog = crate::app::ScriptSeedDialog {
+        open: true,
+        source_path: path,
+        seed_input: format!("{seed}"),
+        error: None,
+    };
+}
+
+pub(crate) fn seed_suggestion() -> u32 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let dur = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let nanos = dur.subsec_nanos();
+    let secs = dur.as_secs() as u32;
+    nanos.wrapping_mul(2_654_435_761).wrapping_add(secs)
 }
 
 pub(crate) fn browse_maps(app: &mut EditorApp, ctx: &egui::Context) {

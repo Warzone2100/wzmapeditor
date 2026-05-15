@@ -199,6 +199,19 @@ pub struct LoadErrorDialog {
     pub details: String,
 }
 
+/// State for the seed prompt shown when opening a Warzone script map.
+///
+/// The `source_path` is captured so the "Re-roll seed" toolbar button
+/// can re-open the same archive with a fresh seed without prompting the
+/// user to pick the file again.
+#[derive(Debug, Default)]
+pub struct ScriptSeedDialog {
+    pub open: bool,
+    pub source_path: std::path::PathBuf,
+    pub seed_input: String,
+    pub error: Option<String>,
+}
+
 /// State for the Save As metadata dialog. Captures `level.json` fields
 /// before invoking the file picker.
 #[derive(Debug, Default)]

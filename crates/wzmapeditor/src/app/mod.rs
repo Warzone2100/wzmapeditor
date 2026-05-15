@@ -143,6 +143,8 @@ pub struct EditorApp {
     pub permission_error_dialog: PermissionErrorDialog,
     /// Modal shown when a user-initiated `.wz` open or drag-drop fails.
     pub load_error_dialog: LoadErrorDialog,
+    /// Modal shown when opening a Warzone script-map so the user can pick a seed.
+    pub script_seed_dialog: ScriptSeedDialog,
     /// Text-edit buffer for the install-directory field on the Settings → Game page.
     pub settings_install_dir_text: String,
     /// Text-edit buffer for the test-game executable field on Settings → Game.
@@ -451,6 +453,7 @@ impl EditorApp {
             test_temp_files: Vec::new(),
             permission_error_dialog: PermissionErrorDialog::default(),
             load_error_dialog: LoadErrorDialog::default(),
+            script_seed_dialog: ScriptSeedDialog::default(),
             settings_install_dir_text,
             settings_wz_exe_text,
             settings_wz_config_dir_text,
@@ -965,6 +968,9 @@ fn show_dialogs(ctx: &egui::Context, app: &mut EditorApp) {
     }
     if app.load_error_dialog.open {
         dialogs::show_load_error_dialog(ctx, app);
+    }
+    if app.script_seed_dialog.open {
+        dialogs::show_script_seed_dialog(ctx, app);
     }
     if app.publish_instructions_dialog.open {
         dialogs::show_publish_instructions_dialog(ctx, app);

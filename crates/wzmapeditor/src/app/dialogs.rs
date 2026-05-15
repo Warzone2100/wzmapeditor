@@ -1131,3 +1131,113 @@ pub(super) fn show_publish_instructions_dialog(ctx: &egui::Context, app: &mut Ed
         }
     }
 }
+
+/// Modal that asks the user to pick a seed for a Warzone script map.
+///
+/// Triggered from `open_wz_dialog` when a script map is detected, and
+/// from the "Re-roll seed" toolbar button. The map runs synchronously on
+/// click; that's acceptable because `azuda.wz` completes in well under a
+/// second and the runtime has a 30-second wall-clock budget. If script
+/// maps with longer warm-up appear we can move this onto the same async
+/// loader pattern used by `start_ground_data_load`.
+pub(super) fn show_script_seed_dialog(ctx: &egui::Context, app: &mut EditorApp) {
+    let mut open = app.script_seed_dialog.open;
+    let mut generate = false;
+    let mut randomise = false;
+    let mut cancel = false;
+
+    egui::Window::new("Open script map")
+        .collapsible(false)
+        .resizable(false)
+        .open(&mut open)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ui.set_max_width(360.0);
+            ui.label(
+                "Script maps generate terrain at load time. Choose a seed; the same seed \
+                 will always produce the same terrain.",
+            );
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.label("Seed:");
+                ui.add(
+                    egui::TextEdit::singleline(&mut app.script_seed_dialog.seed_input)
+                        .desired_width(120.0),
+                );
+                if ui.button("Randomise").clicked() {
+                    randomise = true;
+                }
+            });
+            if let Some(err) = app.script_seed_dialog.error.as_ref() {
+                ui.add_space(4.0);
+                ui.colored_label(egui::Color32::LIGHT_RED, err);
+            }
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui.button("Cancel").clicked() {
+                    cancel = true;
+                }
+                if ui
+                    .add(egui::Button::new("Generate").min_size(egui::vec2(80.0, 0.0)))
+                    .clicked()
+                {
+                    generate = true;
+                }
+            });
+        });
+
+    if randomise {
+        app.script_seed_dialog.seed_input = format!("{}", crate::ui::actions::seed_suggestion());
+        app.script_seed_dialog.error = None;
+    }
+
+    if generate {
+        match app.script_seed_dialog.seed_input.trim().parse::<u32>() {
+            Ok(seed) => {
+                let path = app.script_seed_dialog.source_path.clone();
+                app.script_seed_dialog.open = false;
+                app.script_seed_dialog.error = None;
+                load_script_map_with_seed(app, &path, seed);
+                return;
+            }
+            Err(_) => {
+                app.script_seed_dialog.error =
+                    Some("Seed must be a number from 0 to 4294967295.".to_owned());
+            }
+        }
+    }
+
+    if cancel || !open {
+        app.script_seed_dialog.open = false;
+        app.script_seed_dialog.error = None;
+    }
+}
+
+/// Synchronously load a script map at the requested seed and install it
+/// as the current document.
+pub(crate) fn load_script_map_with_seed(app: &mut EditorApp, path: &std::path::Path, seed: u32) {
+    match wz_maplib::io_wz::run_script_map(path, seed) {
+        Ok(map) => {
+            app.load_map(map, Some(path.to_path_buf()), None, None);
+            if let Some(doc) = app.document.as_mut() {
+                doc.read_only = true;
+                doc.script_seed = Some(seed);
+                doc.script_source = Some(path.to_path_buf());
+            }
+            app.log(format!(
+                "Loaded scripted map {} with seed {seed}.",
+                path.display()
+            ));
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            app.log_error(format!("Failed to run {}: {msg}", path.display()));
+            app.load_error_dialog = super::LoadErrorDialog {
+                open: true,
+                title: "Script map failed to run".to_string(),
+                message: msg.clone(),
+                details: msg,
+            };
+        }
+    }
+}

@@ -9,6 +9,14 @@ pub struct MapDocument {
     pub map: WzMap,
     pub history: EditHistory,
     pub dirty: bool,
+    /// `true` when the map was produced by `run_script_map` and edits must
+    /// be refused.
+    pub read_only: bool,
+    /// Seed used to generate this map, when `read_only` is set.
+    pub script_seed: Option<u32>,
+    /// Source `.wz` path of the script map; needed by the Re-roll Seed
+    /// toolbar action.
+    pub script_source: Option<std::path::PathBuf>,
 }
 
 impl std::fmt::Debug for MapDocument {
@@ -29,6 +37,9 @@ impl MapDocument {
             map,
             history: EditHistory::new(),
             dirty: false,
+            read_only: false,
+            script_seed: None,
+            script_source: None,
         }
     }
 

@@ -53,11 +53,14 @@ impl KeyCombo {
 
     /// Convert to egui modifier flags for use with `consume_key`.
     pub fn to_egui_modifiers(&self) -> egui::Modifiers {
+        // `command` is the platform-abstract modifier (Cmd on macOS, Ctrl
+        // elsewhere). Setting both `ctrl` and `command` would force egui's
+        // `cmd_ctrl_matches` to require the raw Ctrl flag on macOS, where a
+        // Cmd press only sets `mac_cmd` + `command`.
         egui::Modifiers {
             alt: self.alt,
-            ctrl: self.ctrl,
+            ctrl: false,
             shift: self.shift,
-            // COMMAND maps to Ctrl on Windows/Linux, Cmd on macOS.
             mac_cmd: false,
             command: self.ctrl,
         }

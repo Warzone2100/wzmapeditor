@@ -7,13 +7,14 @@
 //! - [`campaign`] handles `gamedesc.lev` and `expand`-style overlays.
 //! - [`level_json`] and [`common`] hold shared zip / sidecar helpers.
 
-mod archive;
+pub(crate) mod archive;
 mod campaign;
 mod classify;
-mod common;
+pub(crate) mod common;
 mod directory;
-mod level_json;
+pub(crate) mod level_json;
 mod preview;
+mod script;
 
 pub use archive::{
     WzArchiveReader, extract_wz_to_dir, extract_wz_to_dir_filtered, extract_wz_to_dir_overwrite,
@@ -23,6 +24,7 @@ pub use campaign::{load_campaign_level, load_campaign_level_by_name, read_campai
 pub use classify::{WzArchiveKind, classify_wz_archive};
 pub use directory::{load_from_directory, save_to_directory};
 pub use preview::{MapPreview, peek_map_preview, scan_map_directory, scan_wz_archive_maps};
+pub use script::{ScriptError, run_script_map, run_script_source};
 
 use crate::map_data::MapData;
 use crate::objects::{Droid, Feature, Structure};

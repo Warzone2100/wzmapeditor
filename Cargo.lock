@@ -3077,6 +3077,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 
 [[package]]
+name = "rand_mt"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a9375873db1061df25ed185eb584cd8839196db7a43803daa0612c5ae53be5b5"
+
+[[package]]
 name = "rand_xorshift"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4938,6 +4944,8 @@ version = "0.8.1"
 dependencies = [
  "byteorder",
  "log",
+ "quickjs-wz-sys",
+ "rand_mt",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

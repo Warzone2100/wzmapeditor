@@ -36,7 +36,7 @@ pub(super) fn build_level_json(map: &WzMap) -> String {
 }
 
 /// Metadata extracted from `level.json` inside a `.wz` archive.
-pub(super) struct LevelMeta {
+pub(crate) struct LevelMeta {
     pub name: String,
     pub players: u8,
     pub tileset: String,
@@ -51,7 +51,12 @@ pub(super) fn read_level_json<R: std::io::Read + std::io::Seek>(
     prefix: &str,
 ) -> Option<LevelMeta> {
     let bytes = read_zip_file(archive, &format!("{prefix}level.json")).ok()?;
-    let text = String::from_utf8_lossy(&bytes);
+    parse_level_json_bytes(&bytes)
+}
+
+/// Parse a `level.json` payload into a [`LevelMeta`].
+pub(crate) fn parse_level_json_bytes(bytes: &[u8]) -> Option<LevelMeta> {
+    let text = String::from_utf8_lossy(bytes);
     let json: serde_json::Value = serde_json::from_str(&text).ok()?;
     let name = json.get("name")?.as_str()?.to_string();
     let players = json.get("players")?.as_u64()? as u8;

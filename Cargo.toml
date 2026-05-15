@@ -41,6 +41,8 @@ zstd = "0.13"
 rustc-hash = "2"
 open = "5"
 semver = "1"
+rand_mt = { version = "5", default-features = false }
+quickjs-wz-sys = { path = "crates/quickjs-wz-sys" }
 
 [workspace.lints.rust]
 dead_code = "deny"

@@ -16,6 +16,8 @@ serde_json = { workspace = true }
 zip = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
+rand_mt = { workspace = true }
+quickjs-wz-sys = { workspace = true }
 
 [lints]
 workspace = true

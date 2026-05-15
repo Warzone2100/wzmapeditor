@@ -192,6 +192,15 @@ pub fn show_menu_bar(ui: &mut Ui, app: &mut EditorApp) {
         ui.menu_button("Map", |ui| {
             let has_doc = app.document.is_some();
             if ui
+                .add_enabled(has_doc, egui::Button::new("Properties\u{2026}"))
+                .on_disabled_hover_text("Open or create a map first")
+                .clicked()
+            {
+                crate::app::dialogs::open_map_properties_dialog(app);
+                ui.close();
+            }
+            ui.separator();
+            if ui
                 .add_enabled(has_doc, egui::Button::new("Resize..."))
                 .on_disabled_hover_text("Open or create a map first")
                 .clicked()

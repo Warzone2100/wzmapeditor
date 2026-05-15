@@ -1,7 +1,5 @@
-//! Right sidebar context-sensitive property editor.
-//!
-//! Covers map metadata and the currently selected object. Tool settings
-//! live in the Terrain tool palette.
+//! Right sidebar editor for the current selection. Tool settings live in
+//! the Terrain tool palette.
 
 use egui::Ui;
 
@@ -85,71 +83,15 @@ fn show_id_field(ui: &mut Ui, id: Option<u32>) {
 }
 
 pub fn show_property_panel(ui: &mut Ui, app: &mut EditorApp) {
-    ui.heading("Properties");
+    ui.heading("Selection");
     ui.separator();
 
-    let has_doc = app.document.is_some();
-
-    if !has_doc {
+    if app.document.is_none() {
         ui.label("No map loaded.");
         ui.label("Use File > New Map or Open to get started.");
         return;
     }
 
-    {
-        let Some(doc) = app.document.as_mut() else {
-            return;
-        };
-
-        ui.horizontal(|ui| {
-            ui.label("Name:");
-            ui.text_edit_singleline(&mut doc.map.map_name);
-        });
-
-        let players: &[u8] = &[1, 2, 3, 4, 5, 6, 7, 8, 10];
-        ui.horizontal(|ui| {
-            ui.label("Players:");
-            egui::ComboBox::from_id_salt("map_players")
-                .selected_text(format!("{}", app.map_players))
-                .show_ui(ui, |ui| {
-                    for &p in players {
-                        ui.selectable_value(&mut app.map_players, p, format!("{p}"));
-                    }
-                });
-        });
-
-        ui.label(format!(
-            "Size: {}x{}",
-            doc.map.map_data.width, doc.map.map_data.height
-        ));
-        ui.label(format!("Tileset: {:?}", app.current_tileset));
-
-        ui.add_space(4.0);
-        let n = doc.map.structures.len() + doc.map.droids.len() + doc.map.features.len();
-        ui.label(
-            egui::RichText::new(format!(
-                "{} objects ({} structs, {} droids, {} feats)",
-                n,
-                doc.map.structures.len(),
-                doc.map.droids.len(),
-                doc.map.features.len(),
-            ))
-            .small()
-            .weak(),
-        );
-        ui.label(
-            egui::RichText::new(format!(
-                "{} gateways, {} labels",
-                doc.map.map_data.gateways.len(),
-                doc.map.labels.len(),
-            ))
-            .small()
-            .weak(),
-        );
-    }
-
-    ui.separator();
-    ui.heading("Selection");
     show_selected_object_props(ui, app);
 
     if matches!(

@@ -93,6 +93,8 @@ pub struct EditorApp {
     pub resize_map_dialog: ResizeMapDialog,
     /// Save As metadata dialog state.
     pub save_as_metadata_dialog: SaveAsMetadataDialog,
+    /// Map Properties dialog state (`Map > Properties`).
+    pub map_properties_dialog: MapPropertiesDialog,
     /// Post-publish drag-in instruction modal.
     pub publish_instructions_dialog: PublishInstructionsDialog,
     /// Map generator dialog state.
@@ -412,6 +414,7 @@ impl EditorApp {
             new_map_dialog: NewMapDialog::default(),
             resize_map_dialog: ResizeMapDialog::default(),
             save_as_metadata_dialog: SaveAsMetadataDialog::default(),
+            map_properties_dialog: MapPropertiesDialog::default(),
             publish_instructions_dialog: PublishInstructionsDialog::default(),
             generator_dialog: crate::generator::dialog::GeneratorDialog::default(),
             stats: None,
@@ -911,6 +914,9 @@ fn show_dialogs(ctx: &egui::Context, app: &mut EditorApp) {
     }
     if app.save_as_metadata_dialog.open {
         dialogs::show_save_as_metadata_dialog(ctx, app);
+    }
+    if app.map_properties_dialog.open {
+        dialogs::show_map_properties_dialog(ctx, app);
     }
     if app.generator_dialog.open || app.generator_dialog.gen_rx.is_some() {
         crate::generator::dialog::show_generator_dialog(ctx, app);

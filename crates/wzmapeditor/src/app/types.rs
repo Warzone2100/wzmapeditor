@@ -29,7 +29,7 @@ impl std::fmt::Display for DockTab {
             Self::Terrain => f.write_str("Terrain"),
             Self::TilesetBrowser => f.write_str("Tileset"),
             Self::AssetBrowser => f.write_str("Assets"),
-            Self::Properties => f.write_str("Properties"),
+            Self::Properties => f.write_str("Selection"),
             Self::Minimap => f.write_str("Minimap"),
             Self::Hierarchy => f.write_str("Hierarchy"),
             Self::Validation => f.write_str("Problems"),
@@ -208,6 +208,21 @@ pub struct SaveAsMetadataDialog {
     pub additional_authors: String,
     pub license: String,
     pub original_author: Option<String>,
+}
+
+/// State for the Map Properties dialog opened from `Map > Properties`.
+///
+/// Mirrors the editable `level.json` fields on the loaded map. `name` and
+/// `players` shadow `WzMap.map_name` and `EditorApp.map_players` until the
+/// user clicks OK so escapes don't dirty the document.
+#[derive(Debug, Default)]
+pub struct MapPropertiesDialog {
+    pub open: bool,
+    pub name: String,
+    pub players: u8,
+    pub author: String,
+    pub additional_authors: String,
+    pub license: String,
 }
 
 #[derive(Debug, Default)]

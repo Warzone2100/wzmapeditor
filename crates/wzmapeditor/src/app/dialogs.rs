@@ -847,6 +847,201 @@ fn commit_save_as_metadata(app: &mut EditorApp) {
     app.save_to_wz(&path);
 }
 
+pub(crate) fn open_map_properties_dialog(app: &mut EditorApp) {
+    let Some(ref doc) = app.document else {
+        return;
+    };
+    let map = &doc.map;
+    let license = map
+        .license
+        .clone()
+        .unwrap_or_else(|| DEFAULT_LICENSE.to_string());
+    let author = map
+        .author
+        .clone()
+        .or_else(|| app.config.default_author_name.clone())
+        .unwrap_or_default();
+    app.map_properties_dialog = super::MapPropertiesDialog {
+        open: true,
+        name: map.map_name.clone(),
+        players: app.map_players,
+        author,
+        additional_authors: map.additional_authors.join(", "),
+        license,
+    };
+}
+
+pub(super) fn show_map_properties_dialog(ctx: &egui::Context, app: &mut EditorApp) {
+    let mut open = app.map_properties_dialog.open;
+    let mut apply_clicked = false;
+
+    let (size_label, tileset_label) = match app.document.as_ref() {
+        Some(doc) => (
+            format!("{}x{}", doc.map.map_data.width, doc.map.map_data.height),
+            format!("{:?}", app.current_tileset),
+        ),
+        None => (String::new(), String::new()),
+    };
+
+    egui::Window::new("Map Properties")
+        .collapsible(false)
+        .resizable(false)
+        .open(&mut open)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ui.set_max_width(420.0);
+            ui.horizontal(|ui| {
+                ui.label("Name:");
+                ui.add(
+                    egui::TextEdit::singleline(&mut app.map_properties_dialog.name)
+                        .desired_width(280.0),
+                );
+            });
+            ui.horizontal(|ui| {
+                ui.label("Players:");
+                let players: &[u8] = &[1, 2, 3, 4, 5, 6, 7, 8, 10];
+                egui::ComboBox::from_id_salt("map_props_players")
+                    .selected_text(format!("{}", app.map_properties_dialog.players))
+                    .show_ui(ui, |ui| {
+                        for &p in players {
+                            ui.selectable_value(
+                                &mut app.map_properties_dialog.players,
+                                p,
+                                format!("{p}"),
+                            );
+                        }
+                    });
+            });
+            ui.label(format!("Size: {size_label}"));
+            ui.label(format!("Tileset: {tileset_label}"));
+
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.label("Author:");
+                ui.add(
+                    egui::TextEdit::singleline(&mut app.map_properties_dialog.author)
+                        .hint_text("Your name")
+                        .desired_width(280.0),
+                );
+            });
+            ui.horizontal(|ui| {
+                ui.label("Additional authors:");
+                ui.add(
+                    egui::TextEdit::singleline(&mut app.map_properties_dialog.additional_authors)
+                        .hint_text("comma-separated")
+                        .desired_width(220.0),
+                );
+            });
+            ui.horizontal(|ui| {
+                ui.label("License:");
+                let current = app.map_properties_dialog.license.clone();
+                let preserved_unknown = !LICENSE_OPTIONS.iter().any(|s| *s == current);
+                egui::ComboBox::from_id_salt("map_props_license_combo")
+                    .selected_text(if current.is_empty() {
+                        DEFAULT_LICENSE.to_string()
+                    } else {
+                        current.clone()
+                    })
+                    .show_ui(ui, |ui| {
+                        if preserved_unknown && !current.is_empty() {
+                            ui.selectable_value(
+                                &mut app.map_properties_dialog.license,
+                                current,
+                                "Preserved (unknown SPDX)",
+                            );
+                        }
+                        for opt in LICENSE_OPTIONS {
+                            ui.selectable_value(
+                                &mut app.map_properties_dialog.license,
+                                (*opt).to_string(),
+                                *opt,
+                            );
+                        }
+                    });
+            });
+
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                if ui.button("OK").clicked() {
+                    apply_clicked = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    app.map_properties_dialog.open = false;
+                }
+            });
+        });
+
+    if app.map_properties_dialog.open {
+        app.map_properties_dialog.open = open;
+    }
+
+    if apply_clicked {
+        commit_map_properties(app);
+    }
+}
+
+fn commit_map_properties(app: &mut EditorApp) {
+    let dialog = std::mem::take(&mut app.map_properties_dialog);
+    let Some(doc) = app.document.as_mut() else {
+        return;
+    };
+
+    let trimmed_name = dialog.name.trim();
+    if !trimmed_name.is_empty() && trimmed_name != doc.map.map_name {
+        doc.map.map_name = trimmed_name.to_string();
+        doc.dirty = true;
+    }
+
+    if dialog.players != app.map_players {
+        app.map_players = dialog.players;
+        doc.map.players = dialog.players;
+        doc.dirty = true;
+    }
+
+    let trimmed_author = dialog.author.trim();
+    let new_author = (!trimmed_author.is_empty()).then(|| trimmed_author.to_string());
+    if new_author != doc.map.author {
+        doc.map.author = new_author;
+        doc.dirty = true;
+    }
+
+    let additional: Vec<String> = dialog
+        .additional_authors
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if additional != doc.map.additional_authors {
+        doc.map.additional_authors = additional;
+        doc.dirty = true;
+    }
+
+    let trimmed_license = dialog.license.trim();
+    let new_license = (!trimmed_license.is_empty()).then(|| trimmed_license.to_string());
+    if new_license != doc.map.license {
+        doc.map.license = new_license;
+        doc.dirty = true;
+    }
+
+    let check_name = doc.map.map_name.clone();
+    let check_players = doc.map.players;
+    if check_players >= 2 {
+        match publish::check_name_unique(&check_name, check_players) {
+            publish::NameCheck::Clear => {}
+            publish::NameCheck::Conflict { repo, html_url } => {
+                app.log_warn(format!(
+                    "Map name \"{check_name}\" already exists in {repo} ({html_url}). \
+                     Submissions with a conflicting name will be rejected by the \
+                     maps-database bot. Rename the map before publishing."
+                ));
+            }
+            publish::NameCheck::Unverified { reason } => {
+                app.log_warn(format!("Couldn't verify map name uniqueness: {reason}"));
+            }
+        }
+    }
+}
+
 pub(super) fn show_publish_instructions_dialog(ctx: &egui::Context, app: &mut EditorApp) {
     let mut open = app.publish_instructions_dialog.open;
     let mut reveal_clicked = false;

@@ -277,6 +277,13 @@ pub struct EditorConfig {
     /// Default `level.json` author name used when saving a new map.
     #[serde(default)]
     pub default_author_name: Option<String>,
+    /// Whether to query GitHub for a newer release on startup.
+    #[serde(default = "default_true")]
+    pub check_for_updates_on_startup: bool,
+    /// Version the user dismissed via the toolbar update button; the
+    /// notification stays hidden until a strictly newer version exists.
+    #[serde(default)]
+    pub dismissed_update_version: Option<String>,
 }
 
 impl Default for EditorConfig {
@@ -317,6 +324,8 @@ impl Default for EditorConfig {
             wz_executable: None,
             wz_config_dir: None,
             default_author_name: None,
+            check_for_updates_on_startup: true,
+            dismissed_update_version: None,
         }
     }
 }

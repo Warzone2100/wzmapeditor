@@ -31,6 +31,7 @@ basis-universal-sys = { workspace = true }
 zstd = { workspace = true }
 rustc-hash = { workspace = true }
 open = { workspace = true }
+semver = { workspace = true }
 fastrand = "2"
 noise = "0.9"
 mimalloc = "0.1"

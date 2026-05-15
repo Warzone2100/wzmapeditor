@@ -24,6 +24,7 @@ mod startup;
 mod thumbnails;
 mod tools;
 mod ui;
+mod update_check;
 mod viewport;
 mod viewshed;
 
@@ -81,7 +82,7 @@ fn main() -> eframe::Result {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1400.0, 900.0])
             .with_min_inner_size([800.0, 600.0])
-            .with_title("wzmapeditor")
+            .with_title(concat!("wzmapeditor - ", env!("CARGO_PKG_VERSION")))
             .with_icon(icon::for_window()),
         renderer: eframe::Renderer::Wgpu,
         // 3D terrain pipeline requires a depth attachment.
@@ -120,7 +121,7 @@ fn main() -> eframe::Result {
 
     let mut output_log_slot = Some(output_log);
     eframe::run_native(
-        "wzmapeditor",
+        concat!("wzmapeditor - ", env!("CARGO_PKG_VERSION")),
         native_options,
         Box::new(move |cc| {
             let log = output_log_slot

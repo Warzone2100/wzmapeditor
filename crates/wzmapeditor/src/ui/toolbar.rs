@@ -90,5 +90,36 @@ pub fn show_toolbar(ui: &mut Ui, app: &mut EditorApp) {
         {
             app.test_map();
         }
+
+        show_update_button(ui, app);
+    });
+}
+
+fn show_update_button(ui: &mut Ui, app: &mut EditorApp) {
+    let Some(info) = app.update_available.clone() else {
+        return;
+    };
+    ui.separator();
+    let btn = egui::Button::new(
+        egui::RichText::new(format!("Update available: {}", info.latest))
+            .color(egui::Color32::BLACK)
+            .strong(),
+    )
+    .fill(egui::Color32::from_rgb(255, 196, 0));
+    let resp = ui
+        .add(btn)
+        .on_hover_text("Open the release page in your browser");
+    if resp.clicked()
+        && let Err(e) = open::that(&info.html_url)
+    {
+        log::warn!("Failed to open release URL {}: {e}", info.html_url);
+    }
+    resp.context_menu(|ui| {
+        if ui.button("Don't show for this version").clicked() {
+            app.config.dismissed_update_version = Some(info.latest.clone());
+            app.config.save();
+            app.update_available = None;
+            ui.close();
+        }
     });
 }

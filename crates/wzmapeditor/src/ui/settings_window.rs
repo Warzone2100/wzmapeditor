@@ -763,6 +763,17 @@ fn show_about_settings(ui: &mut Ui, ctx: &egui::Context, app: &mut EditorApp) {
         ui.heading("wzmapeditor");
         ui.label(RichText::new(format!("version {}", env!("CARGO_PKG_VERSION"))).weak());
 
+        ui.add_space(8.0);
+        if ui
+            .checkbox(
+                &mut app.config.check_for_updates_on_startup,
+                "Check for updates on startup",
+            )
+            .changed()
+        {
+            app.config.save();
+        }
+
         ui.add_space(14.0);
         ui.separator();
         ui.add_space(14.0);

@@ -221,6 +221,11 @@ pub struct EditorApp {
     /// Whether HQ terrain textures (`high.wz` `hw-256` decals) are present
     /// on disk. Drives the "Remastered (HQ)" radio's enabled state.
     pub has_hq_textures: bool,
+    /// One-shot receiver fed by the background update-check worker.
+    /// Dropped once a value lands in `update_available` (or the worker exits).
+    pub update_check_rx: Option<std::sync::mpsc::Receiver<crate::update_check::UpdateInfo>>,
+    /// Newer release the user could upgrade to, surfaced as a toolbar button.
+    pub update_available: Option<crate::update_check::UpdateInfo>,
 }
 
 impl std::fmt::Debug for EditorApp {
@@ -382,6 +387,10 @@ impl EditorApp {
             .map(|p| p.display().to_string())
             .unwrap_or_default();
 
+        let update_check_rx = config
+            .check_for_updates_on_startup
+            .then(crate::update_check::spawn_check);
+
         Self {
             document: None,
             tool_state,
@@ -479,6 +488,29 @@ impl EditorApp {
             last_paint_at: None,
             update_count: 0,
             has_hq_textures: false,
+            update_check_rx,
+            update_available: None,
+        }
+    }
+
+    /// Drop the update-check receiver after its single message arrives,
+    /// filtering out versions the user has already dismissed.
+    fn poll_update_check(&mut self) {
+        let Some(rx) = self.update_check_rx.as_ref() else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(info) => {
+                if self.config.dismissed_update_version.as_deref() != Some(info.latest.as_str()) {
+                    log::info!("Editor update available: {}", info.latest);
+                    self.update_available = Some(info);
+                }
+                self.update_check_rx = None;
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.update_check_rx = None;
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
         }
     }
 
@@ -750,6 +782,7 @@ impl eframe::App for EditorApp {
         if self.update_count == 2 {
             crate::launch_sentinel::disarm();
         }
+        self.poll_update_check();
         self.record_frame_time(ctx);
         // Snapshot OS-level window focus so animation-driven repaint
         // schedulers can skip when we're in the background. egui already

@@ -258,20 +258,18 @@ fn continue_publish(app: &mut EditorApp, wz_path: &std::path::Path, map_name: &s
         }
     };
 
-    let url = publish::submission_url(map_name);
-    if let Err(e) = publish::open_in_browser(&url) {
-        app.log_error(format!("Failed to open browser: {e}"));
-        return;
-    }
+    let submission_url = publish::submission_url(map_name);
 
     app.log(format!(
-        "Opened submission form for \"{map_name}\". Wrote {}",
+        "Prepared submission for \"{map_name}\". Wrote {}",
         zip_path.display(),
     ));
     app.publish_instructions_dialog = crate::app::PublishInstructionsDialog {
         open: true,
         zip_path,
         map_name: map_name.to_string(),
+        submission_url,
+        browser_opened: false,
     };
 }
 

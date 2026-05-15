@@ -230,6 +230,8 @@ pub struct PublishInstructionsDialog {
     pub open: bool,
     pub zip_path: std::path::PathBuf,
     pub map_name: String,
+    pub submission_url: String,
+    pub browser_opened: bool,
 }
 
 /// Which type and index of object is selected.

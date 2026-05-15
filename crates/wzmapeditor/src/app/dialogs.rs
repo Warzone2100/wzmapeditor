@@ -1047,6 +1047,7 @@ fn commit_map_properties(app: &mut EditorApp) {
 pub(super) fn show_publish_instructions_dialog(ctx: &egui::Context, app: &mut EditorApp) {
     let mut open = app.publish_instructions_dialog.open;
     let mut reveal_clicked = false;
+    let mut open_browser_clicked = false;
 
     egui::Window::new("Publish to Maps Database")
         .collapsible(false)
@@ -1056,15 +1057,16 @@ pub(super) fn show_publish_instructions_dialog(ctx: &egui::Context, app: &mut Ed
         .show(ctx, |ui| {
             ui.set_max_width(520.0);
             ui.label(format!(
-                "A submission form for \"{}\" is open in your browser.",
+                "Ready to submit \"{}\" to the Warzone 2100 maps database.",
                 app.publish_instructions_dialog.map_name
             ));
             ui.add_space(8.0);
             ui.label(
-                "Drag the file below into the \"Upload Map\" field, choose \
-                 the right Authorship option, then click \"Submit new \
-                 issue\". The submission bot will validate the map and post \
-                 back with a verdict.",
+                "Clicking \"Open submission form\" launches a prefilled GitHub \
+                 issue in your browser. Drag the file below into the \"Upload \
+                 Map\" field, double-check the Authorship option, then click \
+                 \"Submit new issue\". The submission bot will validate the \
+                 map and post back with a verdict.",
             );
             ui.add_space(8.0);
             ui.group(|ui| {
@@ -1090,6 +1092,14 @@ pub(super) fn show_publish_instructions_dialog(ctx: &egui::Context, app: &mut Ed
                 #[cfg(all(unix, not(target_os = "macos")))]
                 let reveal_label = "Open Folder";
 
+                let open_label = if app.publish_instructions_dialog.browser_opened {
+                    "Reopen submission form"
+                } else {
+                    "Open submission form"
+                };
+                if ui.button(open_label).clicked() {
+                    open_browser_clicked = true;
+                }
                 if ui.button(reveal_label).clicked() {
                     reveal_clicked = true;
                 }
@@ -1105,5 +1115,19 @@ pub(super) fn show_publish_instructions_dialog(ctx: &egui::Context, app: &mut Ed
 
     if reveal_clicked {
         publish::reveal_in_file_manager(&app.publish_instructions_dialog.zip_path);
+    }
+
+    if open_browser_clicked {
+        let url = app.publish_instructions_dialog.submission_url.clone();
+        match publish::open_in_browser(&url) {
+            Ok(()) => {
+                app.publish_instructions_dialog.browser_opened = true;
+                app.log(format!(
+                    "Opened submission form for \"{}\".",
+                    app.publish_instructions_dialog.map_name
+                ));
+            }
+            Err(e) => app.log_error(format!("Failed to open browser: {e}")),
+        }
     }
 }

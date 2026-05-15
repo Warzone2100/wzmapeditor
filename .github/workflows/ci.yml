@@ -41,6 +41,9 @@ jobs:
     name: '${{ matrix.name }}'
     runs-on: '${{ matrix.os }}'
 
+    permissions:
+      contents: write
+
     env:
       RUSTUP_TOOLCHAIN: '1.95.0'
       RUSTTARGET: '${{ matrix.rust_target }}'
@@ -77,3 +80,16 @@ jobs:
       with:
         path: ${{ steps.cargo_build.outputs.BUILT_CHECKSUM }}
         archive: false
+    - name: Attach to draft release
+      if: startsWith(github.ref, 'refs/tags/')
+      shell: bash
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_REPO: ${{ github.repository }}
+      run: |
+        TAG="${GITHUB_REF#refs/tags/}"
+        gh release create "$TAG" --draft --generate-notes --title "$TAG" 2>/dev/null || true
+        gh release upload "$TAG" \
+          "${{ steps.cargo_build.outputs.BUILT_ARCHIVE }}" \
+          "${{ steps.cargo_build.outputs.BUILT_CHECKSUM }}" \
+          --clobber

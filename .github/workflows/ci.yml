@@ -112,6 +112,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v6
+      with:
+        submodules: recursive
     - name: Install Dependencies (macOS)
       if: runner.os == 'macOS'
       run: brew install findutils

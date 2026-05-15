@@ -186,6 +186,19 @@ pub struct PermissionErrorDialog {
     pub error_message: String,
 }
 
+/// State for the modal shown when opening a `.wz` (or dropping one) fails.
+///
+/// `details` carries the raw loader error so the user can copy it into a
+/// bug report; `message` is the human-readable explanation derived from
+/// the archive's classification.
+#[derive(Debug, Default)]
+pub struct LoadErrorDialog {
+    pub open: bool,
+    pub title: String,
+    pub message: String,
+    pub details: String,
+}
+
 /// State for the Save As metadata dialog. Captures `level.json` fields
 /// before invoking the file picker.
 #[derive(Debug, Default)]

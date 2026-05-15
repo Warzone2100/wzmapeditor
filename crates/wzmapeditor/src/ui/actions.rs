@@ -13,7 +13,7 @@ pub(crate) fn open_wz_dialog(app: &mut EditorApp) {
                 let save = Some(path.clone());
                 app.load_map(map, Some(path), save, None);
             }
-            Err(e) => app.log_error(format!("Failed to load .wz: {e}")),
+            Err(e) => app.report_wz_load_error(&path, &e),
         }
     }
 }

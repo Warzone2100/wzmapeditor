@@ -137,6 +137,8 @@ pub struct EditorApp {
     /// Modal shown when copying the test map to the WZ2100 maps directory
     /// fails with `PermissionDenied`.
     pub permission_error_dialog: PermissionErrorDialog,
+    /// Modal shown when a user-initiated `.wz` open or drag-drop fails.
+    pub load_error_dialog: LoadErrorDialog,
     /// Text-edit buffer for the install-directory field on the Settings → Game page.
     pub settings_install_dir_text: String,
     /// Text-edit buffer for the test-game executable field on Settings → Game.
@@ -430,6 +432,7 @@ impl EditorApp {
             test_process: None,
             test_temp_files: Vec::new(),
             permission_error_dialog: PermissionErrorDialog::default(),
+            load_error_dialog: LoadErrorDialog::default(),
             settings_install_dir_text,
             settings_wz_exe_text,
             settings_wz_config_dir_text,
@@ -520,6 +523,22 @@ impl EditorApp {
         log::error!("{msg}");
         self.output_log
             .push(LogEntry::new(LogSeverity::Error, LogSource::Editor, msg));
+    }
+
+    /// Report a failed user-initiated `.wz` load via the modal dialog and
+    /// log the technical detail. The dialog text is keyed off the archive's
+    /// classification, so e.g. script maps get a specific explanation.
+    pub fn report_wz_load_error(&mut self, path: &std::path::Path, error: &wz_maplib::MapError) {
+        let kind = wz_maplib::io_wz::classify_wz_archive(path);
+        let raw = error.to_string();
+        let (title, message) = dialogs::wz_load_error_copy(&kind, &raw);
+        self.log_error(format!("Failed to load {}: {raw}", path.display()));
+        self.load_error_dialog = LoadErrorDialog {
+            open: true,
+            title,
+            message,
+            details: raw,
+        };
     }
 
     /// Run all validation checks on the current map. Returns `true` if problems were found.
@@ -898,6 +917,9 @@ fn show_dialogs(ctx: &egui::Context, app: &mut EditorApp) {
     if app.permission_error_dialog.open {
         dialogs::show_permission_error_dialog(ctx, app);
     }
+    if app.load_error_dialog.open {
+        dialogs::show_load_error_dialog(ctx, app);
+    }
 
     app.poll_test_process();
 
@@ -1051,7 +1073,7 @@ fn handle_drag_and_drop(ctx: &egui::Context, app: &mut EditorApp) {
                 let save = Some(path.clone());
                 app.load_map(map, Some(path), save, None);
             }
-            Err(e) => app.log(format!("Failed to load dropped file: {e}")),
+            Err(e) => app.report_wz_load_error(&path, &e),
         }
     }
 }

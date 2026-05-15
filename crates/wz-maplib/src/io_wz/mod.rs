@@ -9,6 +9,7 @@
 
 mod archive;
 mod campaign;
+mod classify;
 mod common;
 mod directory;
 mod level_json;
@@ -19,6 +20,7 @@ pub use archive::{
     load_from_wz_archive, load_map_from_archive_prefix, read_wz_entry, save_to_wz_archive,
 };
 pub use campaign::{load_campaign_level, load_campaign_level_by_name, read_campaign_index};
+pub use classify::{WzArchiveKind, classify_wz_archive};
 pub use directory::{load_from_directory, save_to_directory};
 pub use preview::{MapPreview, peek_map_preview, scan_map_directory, scan_wz_archive_maps};
 

@@ -14,8 +14,16 @@ fn main() {
     println!("cargo:rerun-if-changed=vendor/quickjs-wz");
     println!("cargo:rerun-if-changed=src/wrapper.c");
 
-    let version = std::fs::read_to_string(qjs.join("VERSION.txt"))
-        .expect("read quickjs VERSION.txt")
+    let version_path = qjs.join("VERSION.txt");
+    let version = std::fs::read_to_string(&version_path)
+        .unwrap_or_else(|e| {
+            panic!(
+                "could not read {}: {e}\n\
+                 The quickjs-wz submodule is missing. From the repo root run:\n\
+                 \n    git submodule update --init --recursive\n",
+                version_path.display(),
+            )
+        })
         .trim()
         .to_owned();
 

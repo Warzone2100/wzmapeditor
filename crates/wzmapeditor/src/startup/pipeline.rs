@@ -272,11 +272,19 @@ pub fn create_startup(config: &EditorConfig) -> StartupInit {
                     match load_result {
                         Ok(map) => {
                             log::info!("Auto-loaded last map: {}", map.map_name);
+                            // Sub-map of a multi-map archive: leave save_path
+                            // unset so Save falls back to Save As; overwriting
+                            // the outer .wz would clobber sibling maps.
+                            let save_path = if prefix.is_empty() {
+                                Some(path.clone())
+                            } else {
+                                None
+                            };
                             Some((
                                 map,
                                 LoadMapMeta {
                                     source_path: Some(path.clone()),
-                                    save_path: None,
+                                    save_path,
                                     archive_prefix: last_prefix,
                                 },
                             ))

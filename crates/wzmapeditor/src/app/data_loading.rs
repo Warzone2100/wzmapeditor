@@ -370,7 +370,7 @@ pub(super) fn start_base_wz_extraction(
 }
 
 /// Try to load game stats from the configured data directory.
-pub(super) fn try_load_stats(app: &mut EditorApp) {
+pub(super) fn try_load_stats(app: &mut EditorApp, ctx: &egui::Context) {
     if app.stats.is_some() || app.rt.stats_load_attempted {
         return;
     }
@@ -414,6 +414,10 @@ pub(super) fn try_load_stats(app: &mut EditorApp) {
             app.model_loader = Some(ModelLoader::new(&data_dir, &db));
             app.stats = Some(db);
             app.objects_dirty = true;
+            if app.validation_results.is_some() {
+                app.run_validation();
+            }
+            ctx.request_repaint();
         }
         Err(e) => {
             app.log(format!("Failed to load stats: {e}"));

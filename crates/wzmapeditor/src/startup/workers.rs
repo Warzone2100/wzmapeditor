@@ -188,6 +188,12 @@ pub fn poll_startup_loads(ctx: &egui::Context, app: &mut EditorApp) {
             }
             app.stats = Some(db);
             app.objects_dirty = true;
+            // The map task may have finished first and cached a validation
+            // result with stats=None; rerun now so real footprints are used.
+            if app.validation_results.is_some() {
+                app.run_validation();
+            }
+            ctx.request_repaint();
         }
         app.rt.stats_load_attempted = true;
         *stats_rx = None;

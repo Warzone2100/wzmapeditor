@@ -644,8 +644,8 @@ impl EditorApp {
     }
 
     /// Try to load game stats from the configured data directory.
-    pub fn try_load_stats(&mut self) {
-        data_loading::try_load_stats(self);
+    pub fn try_load_stats(&mut self, ctx: &egui::Context) {
+        data_loading::try_load_stats(self, ctx);
     }
 
     /// Save to the remembered path (quick save). Returns false if no path is set.
@@ -855,7 +855,7 @@ fn auto_load_assets(ctx: &egui::Context, app: &mut EditorApp) {
         }
 
         if app.stats.is_none() && !app.rt.stats_load_attempted {
-            app.try_load_stats();
+            app.try_load_stats(ctx);
         }
 
         if app.tileset.is_some()

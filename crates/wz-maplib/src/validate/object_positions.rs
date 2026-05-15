@@ -1,6 +1,6 @@
 //! Object position validation: off-map, near-edge, overlapping structures.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
 use crate::constants::{TILE_SHIFT, TILE_UNITS, TOO_NEAR_EDGE};
 use crate::io_wz::WzMap;
@@ -119,7 +119,10 @@ fn validate_structure_overlap(
 ) {
     let cat = ValidationCategory::ObjectPositions;
 
-    let mut occupancy: HashMap<(u32, u32), Vec<(usize, u8)>> = HashMap::new();
+    // Sorted iteration is required so the dedup-by-pair below picks the same
+    // (top-left-most) tile every run; HashMap's randomized order would jitter
+    // the reported coordinate.
+    let mut occupancy: BTreeMap<(u32, u32), Vec<(usize, u8)>> = BTreeMap::new();
 
     for (idx, s) in map.structures.iter().enumerate() {
         let base_tx = s.position.x >> TILE_SHIFT;

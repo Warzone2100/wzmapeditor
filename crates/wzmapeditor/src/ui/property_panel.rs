@@ -332,6 +332,7 @@ fn show_selected_object_props(ui: &mut Ui, app: &mut EditorApp) {
 
                 if changed {
                     doc.dirty = true;
+                    app.validation_dirty = true;
                 }
             }
         }
@@ -386,6 +387,7 @@ fn show_selected_object_props(ui: &mut Ui, app: &mut EditorApp) {
 
                 if changed {
                     doc.dirty = true;
+                    app.validation_dirty = true;
                 }
             }
         }
@@ -624,6 +626,7 @@ fn show_gateway_list(ui: &mut Ui, app: &mut EditorApp) {
         cmd.execute(&mut doc.map);
         doc.history.push_already_applied(Box::new(cmd));
         doc.dirty = true;
+        app.validation_dirty = true;
     }
 }
 
@@ -682,5 +685,6 @@ fn show_label_list(ui: &mut Ui, app: &mut EditorApp) {
         cmd.execute(&mut doc.map);
         doc.history.push_already_applied(Box::new(cmd));
         doc.dirty = true;
+        app.validation_dirty = true;
     }
 }

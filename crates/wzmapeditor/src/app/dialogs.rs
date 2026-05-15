@@ -990,12 +990,14 @@ fn commit_map_properties(app: &mut EditorApp) {
     if !trimmed_name.is_empty() && trimmed_name != doc.map.map_name {
         doc.map.map_name = trimmed_name.to_string();
         doc.dirty = true;
+        app.validation_dirty = true;
     }
 
     if dialog.players != app.map_players {
         app.map_players = dialog.players;
         doc.map.players = dialog.players;
         doc.dirty = true;
+        app.validation_dirty = true;
     }
 
     let trimmed_author = dialog.author.trim();

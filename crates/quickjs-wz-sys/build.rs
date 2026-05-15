@@ -12,11 +12,14 @@ fn main() {
     let ext = vendor.join("quickjs-wz-extensions");
 
     println!("cargo:rerun-if-changed=vendor/quickjs-wz");
+    println!("cargo:rerun-if-changed=src/wrapper.c");
 
     let version = std::fs::read_to_string(qjs.join("VERSION.txt"))
         .expect("read quickjs VERSION.txt")
         .trim()
         .to_owned();
+
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
     let mut build = cc::Build::new();
     build
@@ -25,6 +28,7 @@ fn main() {
         .file(qjs.join("libregexp.c"))
         .file(qjs.join("libunicode.c"))
         .file(qjs.join("quickjs.c"))
+        .file(manifest.join("src/wrapper.c"))
         .include(&qjs)
         .include(&ext)
         .define("CONFIG_VERSION", format!("\"{version}\"").as_str())

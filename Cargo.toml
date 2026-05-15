@@ -5,6 +5,7 @@ members = [
     "crates/wz-maplib",
     "crates/wz-pie",
     "crates/wz-stats",
+    "crates/quickjs-wz-sys",
 ]
 
 [workspace.package]

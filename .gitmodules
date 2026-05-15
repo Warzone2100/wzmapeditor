@@ -1,0 +1,3 @@
+[submodule "crates/quickjs-wz-sys/vendor/quickjs-wz"]
+	path = crates/quickjs-wz-sys/vendor/quickjs-wz
+	url = git@github-phetrommer:Warzone2100/quickjs-wz.git

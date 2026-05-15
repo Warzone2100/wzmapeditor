@@ -1,0 +1,17 @@
+[package]
+name = "quickjs-wz-sys"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Static link of Warzone 2100's QuickJS fork (quickjs-wz) with limited-context patches."
+
+[lib]
+path = "src/lib.rs"
+
+[build-dependencies]
+cc = "1"
+
+[lints]
+workspace = true

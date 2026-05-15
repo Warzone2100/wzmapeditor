@@ -3034,6 +3034,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickjs-wz-sys"
+version = "0.8.1"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"

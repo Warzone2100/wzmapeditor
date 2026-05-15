@@ -41,6 +41,9 @@ fn stamp_at_current_positions(app: &mut EditorApp) {
     let Some(doc) = app.document.as_mut() else {
         return;
     };
+    if doc.is_read_only() {
+        return;
+    }
 
     let mut commands: Vec<Box<dyn EditCommand>> = Vec::new();
     let mut count = 0_usize;
@@ -101,6 +104,9 @@ fn duplicate_with_offset(app: &mut EditorApp, dx: i64, dz: i64) {
     let Some(doc) = app.document.as_mut() else {
         return;
     };
+    if doc.is_read_only() {
+        return;
+    }
 
     let max_x = i64::from(doc.map.map_data.width) * i64::from(TILE_UNITS);
     let max_y = i64::from(doc.map.map_data.height) * i64::from(TILE_UNITS);

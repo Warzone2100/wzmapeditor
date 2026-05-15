@@ -125,6 +125,9 @@ pub(crate) fn open_config_dir(app: &mut EditorApp) {
 
 pub(crate) fn undo(app: &mut EditorApp) {
     if let Some(ref mut doc) = app.document {
+        if doc.is_read_only() {
+            return;
+        }
         let dirties_objects = doc.undo();
         app.terrain_dirty = true;
         app.minimap.dirty = true;
@@ -136,6 +139,9 @@ pub(crate) fn undo(app: &mut EditorApp) {
 
 pub(crate) fn redo(app: &mut EditorApp) {
     if let Some(ref mut doc) = app.document {
+        if doc.is_read_only() {
+            return;
+        }
         let dirties_objects = doc.redo();
         app.terrain_dirty = true;
         app.minimap.dirty = true;

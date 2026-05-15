@@ -62,6 +62,12 @@ impl MapDocument {
     pub fn mark_clean(&mut self) {
         self.dirty = false;
     }
+
+    /// Whether mutations to the document must be refused. Set by the
+    /// script-map import path; cleared on every other code path.
+    pub fn is_read_only(&self) -> bool {
+        self.read_only
+    }
 }
 
 #[cfg(test)]

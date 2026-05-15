@@ -111,6 +111,9 @@ pub(super) fn load_map(
 
 /// Save to the remembered path (quick save). Returns false if no path is set.
 pub(super) fn save_to_current(app: &mut EditorApp) -> bool {
+    if refuse_save_if_read_only(app) {
+        return true;
+    }
     let Some(ref path) = app.save_path else {
         return false;
     };
@@ -121,6 +124,22 @@ pub(super) fn save_to_current(app: &mut EditorApp) -> bool {
         save_to_directory(app, &path);
     }
     true
+}
+
+/// If the active document was produced by `run_script_map`, log a clear
+/// message and refuse to write. Returns `true` when a save was refused.
+pub(super) fn refuse_save_if_read_only(app: &mut EditorApp) -> bool {
+    if app
+        .document
+        .as_ref()
+        .is_some_and(crate::map::document::MapDocument::is_read_only)
+    {
+        app.log(
+            "Script maps are read-only. Use \"Save As\" to a new file if you want to keep this snapshot.",
+        );
+        return true;
+    }
+    false
 }
 
 /// Run validation before save and log a warning if problems exist.

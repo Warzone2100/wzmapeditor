@@ -23,6 +23,11 @@ pub fn show_toolbar(ui: &mut Ui, app: &mut EditorApp) {
         }
 
         let has_doc = app.document.is_some();
+        let read_only = app
+            .document
+            .as_ref()
+            .is_some_and(crate::map::document::MapDocument::is_read_only);
+        let can_edit = has_doc && !read_only;
         let save_shortcut = app.config.keymap.shortcut_text(Action::Save).to_string();
 
         if ui.button("New").on_hover_text("New Map").clicked() {
@@ -35,26 +40,46 @@ pub fn show_toolbar(ui: &mut Ui, app: &mut EditorApp) {
         {
             actions::open_wz_dialog(app);
         }
+        let save_tooltip = if read_only {
+            "Script maps are read-only".to_string()
+        } else {
+            format!("Save ({save_shortcut})")
+        };
         if ui
-            .add_enabled(has_doc, egui::Button::new("Save"))
-            .on_hover_text(format!("Save ({save_shortcut})"))
+            .add_enabled(can_edit, egui::Button::new("Save"))
+            .on_hover_text(&save_tooltip)
+            .on_disabled_hover_text(&save_tooltip)
             .clicked()
         {
             actions::save_current_or_prompt(app);
         }
         if ui
-            .add_enabled(has_doc, egui::Button::new("Undo"))
+            .add_enabled(can_edit, egui::Button::new("Undo"))
             .on_hover_text("Undo")
             .clicked()
         {
             actions::undo(app);
         }
         if ui
-            .add_enabled(has_doc, egui::Button::new("Redo"))
+            .add_enabled(can_edit, egui::Button::new("Redo"))
             .on_hover_text("Redo")
             .clicked()
         {
             actions::redo(app);
+        }
+
+        if read_only
+            && app
+                .document
+                .as_ref()
+                .is_some_and(|d| d.script_seed.is_some())
+            && ui
+                .button("Re-roll seed\u{2026}")
+                .on_hover_text("Regenerate the script map with a new seed")
+                .clicked()
+            && let Some(path) = app.document.as_ref().and_then(|d| d.script_source.clone())
+        {
+            actions::open_script_seed_dialog(app, path);
         }
 
         ui.separator();

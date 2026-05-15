@@ -120,6 +120,10 @@ fn show_selected_object_props(ui: &mut Ui, app: &mut EditorApp) {
     let Some(doc) = app.document.as_mut() else {
         return;
     };
+    if doc.is_read_only() {
+        ui.label("Script map: read-only.");
+        return;
+    }
 
     match sel {
         crate::app::SelectedObject::Structure(i) => {
@@ -417,6 +421,10 @@ fn show_multi_selection_props(ui: &mut Ui, app: &mut EditorApp) {
     let Some(doc) = app.document.as_mut() else {
         return;
     };
+    if doc.is_read_only() {
+        ui.label("Script map: read-only.");
+        return;
+    }
 
     let mut struct_count = 0usize;
     let mut droid_count = 0usize;
@@ -618,6 +626,9 @@ fn show_gateway_list(ui: &mut Ui, app: &mut EditorApp) {
         let Some(doc) = app.document.as_mut() else {
             return;
         };
+        if doc.is_read_only() {
+            return;
+        }
         let gw = doc.map.map_data.gateways[idx];
         let cmd = crate::tools::gateway_tool::DeleteGatewayCommand {
             index: idx,
@@ -676,6 +687,9 @@ fn show_label_list(ui: &mut Ui, app: &mut EditorApp) {
         let Some(doc) = app.document.as_mut() else {
             return;
         };
+        if doc.is_read_only() {
+            return;
+        }
         let (saved_key, saved_label) = doc.map.labels[idx].clone();
         let cmd = crate::tools::label_tool::DeleteLabelCommand {
             index: idx,

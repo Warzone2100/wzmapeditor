@@ -61,6 +61,13 @@ fn dispatch_pointer_input(
     rect: egui::Rect,
     camera: &crate::viewport::camera::Camera,
 ) {
+    if app
+        .document
+        .as_ref()
+        .is_some_and(crate::map::document::MapDocument::is_read_only)
+    {
+        return;
+    }
     let secondary_clicked = response.clicked_by(egui::PointerButton::Secondary);
     let escape_pressed = response.ctx.input(|i| i.key_pressed(egui::Key::Escape));
 
@@ -242,6 +249,13 @@ pub(crate) fn render_active_tool_properties(ui: &mut egui::Ui, app: &mut EditorA
 /// Finalise any in-flight stroke on every non-active trait-based tool by
 /// calling `on_deactivated`, producing one undo step per tool.
 pub(crate) fn flush_inactive_tool_strokes(app: &mut EditorApp) {
+    if app
+        .document
+        .as_ref()
+        .is_some_and(crate::map::document::MapDocument::is_read_only)
+    {
+        return;
+    }
     let active = app.tool_state.active_tool;
     let placement_player = app.tool_state.placement_player;
     let mirror_mode = app.tool_state.mirror_mode;

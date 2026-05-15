@@ -36,6 +36,9 @@ pub(super) fn delete_selected_objects(app: &mut EditorApp) {
     let Some(doc) = app.document.as_mut() else {
         return;
     };
+    if doc.is_read_only() {
+        return;
+    }
 
     let mut commands: Vec<Box<dyn crate::map::history::EditCommand>> = Vec::new();
 
@@ -154,6 +157,9 @@ pub(super) fn rotate_selected_objects(app: &mut EditorApp) -> bool {
     let Some(doc) = app.document.as_mut() else {
         return false;
     };
+    if doc.is_read_only() {
+        return false;
+    }
 
     let mut commands: Vec<Box<dyn crate::map::history::EditCommand>> = Vec::new();
 

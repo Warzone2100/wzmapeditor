@@ -220,6 +220,9 @@ pub struct EditorApp {
     /// `update()` call count, used to detect the first surviving frame
     /// so the launch sentinel can be cleared.
     pub update_count: u32,
+    /// Tracks the OS window title we last asked egui to set, so the title
+    /// is only resent when it actually changes.
+    pub current_window_title: String,
     /// Whether HQ terrain textures (`high.wz` `hw-256` decals) are present
     /// on disk. Drives the "Remastered (HQ)" radio's enabled state.
     pub has_hq_textures: bool,
@@ -490,6 +493,7 @@ impl EditorApp {
             window_focused: true,
             last_paint_at: None,
             update_count: 0,
+            current_window_title: String::new(),
             has_hq_textures: false,
             update_check_rx,
             update_available: None,
@@ -787,6 +791,7 @@ impl eframe::App for EditorApp {
         }
         self.poll_update_check();
         self.record_frame_time(ctx);
+        refresh_window_title(ctx, self);
         // Snapshot OS-level window focus so animation-driven repaint
         // schedulers can skip when we're in the background. egui already
         // wakes update() on focus changes and on background-thread
@@ -812,6 +817,25 @@ impl eframe::App for EditorApp {
         handle_drag_and_drop(ctx, self);
         handle_deferred_save(self);
         enforce_fps_cap(self);
+    }
+}
+
+/// Send `ViewportCommand::Title` only when the desired title changes, so
+/// platforms that re-paint the title bar on every set (X11, Wayland) don't
+/// flicker.
+fn refresh_window_title(ctx: &egui::Context, app: &mut EditorApp) {
+    let base = concat!("wzmapeditor - ", env!("CARGO_PKG_VERSION"));
+    let desired = match app.document.as_ref() {
+        Some(doc) if doc.is_read_only() => match doc.script_seed {
+            Some(seed) => format!("{base} - {} (scripted, seed={seed})", doc.map.map_name),
+            None => format!("{base} - {} (scripted)", doc.map.map_name),
+        },
+        Some(doc) => format!("{base} - {}", doc.map.map_name),
+        None => base.to_string(),
+    };
+    if desired != app.current_window_title {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(desired.clone()));
+        app.current_window_title = desired;
     }
 }
 

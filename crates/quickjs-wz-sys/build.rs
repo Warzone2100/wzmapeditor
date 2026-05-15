@@ -4,10 +4,11 @@
 //! same sources, same defines, same warning suppressions. We use the `cc`
 //! crate instead of invoking `CMake` so end users don't need `CMake` on `PATH`.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn main() {
-    let vendor = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("vendor/quickjs-wz");
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let vendor = manifest.join("vendor/quickjs-wz");
     let qjs = vendor.join("quickjs");
     let ext = vendor.join("quickjs-wz-extensions");
 
@@ -15,19 +16,21 @@ fn main() {
     println!("cargo:rerun-if-changed=src/wrapper.c");
 
     let version_path = qjs.join("VERSION.txt");
+    if !version_path.exists() {
+        try_init_submodule(&manifest, &version_path);
+    }
     let version = std::fs::read_to_string(&version_path)
         .unwrap_or_else(|e| {
             panic!(
                 "could not read {}: {e}\n\
-                 The quickjs-wz submodule is missing. From the repo root run:\n\
+                 The quickjs-wz submodule is missing and `git submodule update --init` \
+                 could not fix it. Run it manually from the repo root:\n\
                  \n    git submodule update --init --recursive\n",
                 version_path.display(),
             )
         })
         .trim()
         .to_owned();
-
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
     let mut build = cc::Build::new();
     build
@@ -95,4 +98,41 @@ fn main() {
 
     println!("cargo:include={}", qjs.display());
     println!("cargo:ext_include={}", ext.display());
+}
+
+/// Run `git submodule update --init --recursive` from the repo root when the
+/// vendored quickjs-wz tree hasn't been fetched yet. Silent best-effort: if
+/// `git` isn't on PATH or the repo isn't a git checkout (e.g. a downloaded
+/// tarball) the caller falls back to a panic with manual-fix instructions.
+fn try_init_submodule(manifest: &Path, version_path: &Path) {
+    let Some(repo_root) = find_repo_root(manifest) else {
+        return;
+    };
+    eprintln!("quickjs-wz submodule not found; running `git submodule update --init --recursive`");
+    let status = std::process::Command::new("git")
+        .args(["submodule", "update", "--init", "--recursive"])
+        .current_dir(&repo_root)
+        .status();
+    match status {
+        Ok(s) if s.success() && version_path.exists() => {
+            eprintln!(
+                "quickjs-wz submodule initialised at {}",
+                repo_root.display()
+            );
+        }
+        Ok(s) => eprintln!("git submodule update exited with {s}"),
+        Err(e) => eprintln!("could not run git: {e}"),
+    }
+}
+
+/// Walk parents of `start` looking for a `.git` entry (a directory in a
+/// regular clone, a file inside a worktree). Returns the directory holding it.
+fn find_repo_root(start: &Path) -> Option<PathBuf> {
+    let mut cur = start;
+    loop {
+        if cur.join(".git").exists() {
+            return Some(cur.to_path_buf());
+        }
+        cur = cur.parent()?;
+    }
 }

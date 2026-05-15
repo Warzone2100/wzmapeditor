@@ -87,9 +87,5 @@ if [[ "$RUNNER_OS" == "Windows" ]]; then
 else
   zip -9r $ARCHIVE_FILE_NAME ${OUTPUT_LIST}
 fi
-printf "%s %s" "$(sha256sum "${ARCHIVE_FILE_NAME}" | cut -d ' ' -f 1)" "${ARCHIVE_FILE_NAME}" > "${ARCHIVE_FILE_NAME}.sha256sum"
-CHECKSUM_FILE_NAME="${ARCHIVE_FILE_NAME}.sha256sum"
-
 # Set GitHub step output variables
 set_gh_output "BUILT_ARCHIVE" "${OUTPUT_DIR}/${ARCHIVE_FILE_NAME}"
-set_gh_output "BUILT_CHECKSUM" "${OUTPUT_DIR}/${CHECKSUM_FILE_NAME}"

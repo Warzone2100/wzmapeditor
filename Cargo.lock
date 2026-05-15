@@ -4927,7 +4927,7 @@ checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
 
 [[package]]
 name = "wz-maplib"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "byteorder",
  "log",
@@ -4940,7 +4940,7 @@ dependencies = [
 
 [[package]]
 name = "wz-pie"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "glam",
  "log",
@@ -4949,7 +4949,7 @@ dependencies = [
 
 [[package]]
 name = "wz-stats"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "log",
  "serde",
@@ -4959,7 +4959,7 @@ dependencies = [
 
 [[package]]
 name = "wzmapeditor"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "anyhow",
  "basis-universal",

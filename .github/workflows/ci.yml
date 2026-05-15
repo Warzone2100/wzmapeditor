@@ -9,7 +9,67 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  create-draft-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+    - name: Compose grouped release notes and create draft
+      shell: bash
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_REPO: ${{ github.repository }}
+      run: |
+        set -euo pipefail
+        TAG="${GITHUB_REF#refs/tags/}"
+        PRIOR="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+        if [ -n "$PRIOR" ]; then
+          RANGE="${PRIOR}..${TAG}"
+        else
+          RANGE="${TAG}"
+        fi
+
+        bucket() {
+          local prefix="$1"
+          git log "$RANGE" --no-merges --pretty='format:%s' \
+            | awk -v p="^${prefix}: " '$0 ~ p { sub(p,""); print "- " $0 }'
+        }
+
+        ADDED="$(bucket Add)"
+        FIXED="$(bucket Fix)"
+        CHANGED="$(bucket Update)"
+        REMOVED="$(bucket Remove)"
+        OTHER="$(git log "$RANGE" --no-merges --pretty='format:%s' \
+          | awk '!/^(Add|Fix|Update|Remove|CI|ci|config):/ && !/^Bump version/ { print "- " $0 }')"
+
+        NOTES="$(mktemp)"
+        {
+          [ -n "$ADDED"   ] && { printf '## Added\n%s\n\n'    "$ADDED";   }
+          [ -n "$FIXED"   ] && { printf '## Fixed\n%s\n\n'    "$FIXED";   }
+          [ -n "$CHANGED" ] && { printf '## Changed\n%s\n\n'  "$CHANGED"; }
+          [ -n "$REMOVED" ] && { printf '## Removed\n%s\n\n'  "$REMOVED"; }
+          [ -n "$OTHER"   ] && { printf '## Other\n%s\n\n'    "$OTHER";   }
+          if [ -n "$PRIOR" ]; then
+            printf '**Full changelog:** https://github.com/%s/compare/%s...%s\n' \
+              "${GITHUB_REPOSITORY}" "${PRIOR}" "${TAG}"
+          fi
+        } > "$NOTES"
+
+        echo "----- release notes preview -----"
+        cat "$NOTES"
+        echo "----- end preview -----"
+
+        if ! gh release view "$TAG" >/dev/null 2>&1; then
+          gh release create "$TAG" --draft --notes-file "$NOTES" --title "$TAG"
+        fi
+
   build:
+    needs: [create-draft-release]
+    if: ${{ !cancelled() && (needs.create-draft-release.result == 'success' || needs.create-draft-release.result == 'skipped') }}
 
     strategy:
       matrix:
@@ -75,11 +135,6 @@ jobs:
       with:
         path: ${{ steps.cargo_build.outputs.BUILT_ARCHIVE }}
         archive: false
-    - name: Upload checksum
-      uses: actions/upload-artifact@v7
-      with:
-        path: ${{ steps.cargo_build.outputs.BUILT_CHECKSUM }}
-        archive: false
     - name: Attach to draft release
       if: startsWith(github.ref, 'refs/tags/')
       shell: bash
@@ -88,8 +143,6 @@ jobs:
         GH_REPO: ${{ github.repository }}
       run: |
         TAG="${GITHUB_REF#refs/tags/}"
-        gh release create "$TAG" --draft --generate-notes --title "$TAG" 2>/dev/null || true
         gh release upload "$TAG" \
           "${{ steps.cargo_build.outputs.BUILT_ARCHIVE }}" \
-          "${{ steps.cargo_build.outputs.BUILT_CHECKSUM }}" \
           --clobber

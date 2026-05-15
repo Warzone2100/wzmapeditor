@@ -74,12 +74,11 @@ pub fn show_toolbar(ui: &mut Ui, app: &mut EditorApp) {
                 .as_ref()
                 .is_some_and(|d| d.script_seed.is_some())
             && ui
-                .button("Re-roll seed\u{2026}")
-                .on_hover_text("Regenerate the script map with a new seed")
+                .button("Re-roll seed")
+                .on_hover_text("Regenerate the script map with a new random seed")
                 .clicked()
-            && let Some(path) = app.document.as_ref().and_then(|d| d.script_source.clone())
         {
-            actions::open_script_seed_dialog(app, path);
+            actions::reroll_script_seed(app);
         }
 
         ui.separator();

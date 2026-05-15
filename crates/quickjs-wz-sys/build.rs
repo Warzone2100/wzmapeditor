@@ -71,6 +71,7 @@ fn main() {
             "-Wno-array-bounds",
             "-Wno-cast-align",
             "-Wno-format-nonliteral",
+            "-Wno-unterminated-string-initialization",
             "-funsigned-char",
         ] {
             build.flag_if_supported(flag);

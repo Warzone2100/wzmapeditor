@@ -28,8 +28,8 @@ pub(crate) fn open_wz_dialog(app: &mut EditorApp) {
     }
 }
 
-/// Open the seed-prompt dialog for a known script-map path. Reused by the
-/// "Re-roll seed" toolbar action.
+/// Open the seed-prompt dialog for a known script-map path. Called by the
+/// import flow when the user first picks a `.wz` script archive.
 pub(crate) fn open_script_seed_dialog(app: &mut EditorApp, path: std::path::PathBuf) {
     let seed = seed_suggestion();
     app.script_seed_dialog = crate::app::ScriptSeedDialog {
@@ -38,6 +38,16 @@ pub(crate) fn open_script_seed_dialog(app: &mut EditorApp, path: std::path::Path
         seed_input: format!("{seed}"),
         error: None,
     };
+}
+
+/// Re-run the active script map with a fresh random seed, with no dialog.
+/// Triggered by the "Re-roll seed" toolbar button.
+pub(crate) fn reroll_script_seed(app: &mut EditorApp) {
+    let Some(path) = app.document.as_ref().and_then(|d| d.script_source.clone()) else {
+        return;
+    };
+    let seed = seed_suggestion();
+    crate::app::dialogs::load_script_map_with_seed(app, &path, seed);
 }
 
 pub(crate) fn seed_suggestion() -> u32 {

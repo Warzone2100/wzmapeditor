@@ -228,7 +228,7 @@ pub(super) fn set_data_dir(app: &mut EditorApp, dir: std::path::PathBuf, _ctx: &
 
 /// Returns true if `high.wz` was extracted into `data_dir`, detected by the
 /// presence of any `tertiles*hw-256` decal directory under `base/texpages/`.
-fn detect_hq_textures(data_dir: &std::path::Path) -> bool {
+pub(crate) fn detect_hq_textures(data_dir: &std::path::Path) -> bool {
     let texpages = data_dir.join("base").join("texpages");
     for name in ["tertilesc1hw-256", "tertilesc2hw-256", "tertilesc3hw-256"] {
         if texpages.join(name).is_dir() {

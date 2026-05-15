@@ -54,6 +54,7 @@ pub fn poll_startup_loads(ctx: &egui::Context, app: &mut EditorApp) {
                     // flags, those haven't been loaded yet.
                     app.config.data_dir = Some(data_dir.clone());
                     app.config.save();
+                    app.has_hq_textures = crate::app::data_loading::detect_hq_textures(&data_dir);
 
                     // Spawn tileset + stats threads now that dirs exist.
                     match crate::startup::pipeline::spawn_tileset_load_for(

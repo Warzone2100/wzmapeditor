@@ -1,7 +1,7 @@
 //! Main application state and egui integration.
 
 mod actions;
-mod data_loading;
+pub(crate) mod data_loading;
 mod designer;
 pub(crate) mod dialogs;
 mod dock_viewer;
@@ -396,6 +396,15 @@ impl EditorApp {
             .check_for_updates_on_startup
             .then(crate::update_check::spawn_check);
 
+        // Detect HQ tiles up-front so the Remastered radio is correctly
+        // enabled on every boot path. `set_data_dir` only fires when the
+        // user picks a dir interactively or after a base.wz extraction;
+        // cached-config startups would otherwise keep the flag false.
+        let has_hq_textures = config
+            .data_dir
+            .as_deref()
+            .is_some_and(data_loading::detect_hq_textures);
+
         Self {
             document: None,
             tool_state,
@@ -494,7 +503,7 @@ impl EditorApp {
             last_paint_at: None,
             update_count: 0,
             current_window_title: String::new(),
-            has_hq_textures: false,
+            has_hq_textures,
             update_check_rx,
             update_available: None,
         }

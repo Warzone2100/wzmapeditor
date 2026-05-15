@@ -1,6 +1,7 @@
 //! Shared action handlers invoked from both the menu bar and the toolbar.
 
 use crate::app::EditorApp;
+use crate::publish;
 
 pub(crate) fn open_wz_dialog(app: &mut EditorApp) {
     if let Some(path) = rfd::FileDialog::new()
@@ -215,6 +216,63 @@ pub(crate) fn save_as_game_map(app: &mut EditorApp) {
         Ok(()) => app.log(format!("Wrote game.map to {}", path.display())),
         Err(e) => app.log_error(format!("Failed to write {}: {e}", path.display())),
     }
+}
+
+pub(crate) fn publish_to_maps_db(app: &mut EditorApp) {
+    let Some(ref doc) = app.document else {
+        return;
+    };
+
+    let Some(wz_path) = app.save_path.clone() else {
+        app.log_error("Save the map to a .wz file before publishing to the Maps Database.");
+        return;
+    };
+
+    if !wz_path.is_file() {
+        app.log_error(format!(
+            "Saved map file is missing: {}. Save the map again before publishing.",
+            wz_path.display(),
+        ));
+        return;
+    }
+
+    let map_name = if doc.map.map_name.trim().is_empty() {
+        wz_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("UntitledMap")
+            .to_string()
+    } else {
+        doc.map.map_name.clone()
+    };
+
+    continue_publish(app, &wz_path, &map_name);
+}
+
+fn continue_publish(app: &mut EditorApp, wz_path: &std::path::Path, map_name: &str) {
+    let zip_path = match publish::write_wz_zip(wz_path) {
+        Ok(p) => p,
+        Err(e) => {
+            app.log_error(format!("Failed to prepare .wz.zip for publish: {e}"));
+            return;
+        }
+    };
+
+    let url = publish::submission_url(map_name);
+    if let Err(e) = publish::open_in_browser(&url) {
+        app.log_error(format!("Failed to open browser: {e}"));
+        return;
+    }
+
+    app.log(format!(
+        "Opened submission form for \"{map_name}\". Wrote {}",
+        zip_path.display(),
+    ));
+    app.publish_instructions_dialog = crate::app::PublishInstructionsDialog {
+        open: true,
+        zip_path,
+        map_name: map_name.to_string(),
+    };
 }
 
 pub(crate) fn save_as_preview_png(app: &mut EditorApp) {

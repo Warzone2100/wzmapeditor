@@ -19,6 +19,7 @@ mod launch_sentinel;
 mod logger;
 mod map;
 mod panic_logger;
+mod publish;
 mod startup;
 mod thumbnails;
 mod tools;

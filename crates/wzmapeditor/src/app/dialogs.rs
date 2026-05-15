@@ -1,9 +1,10 @@
-//! Application dialog windows: recovery, new map, save-as metadata.
+//! Application dialog windows: recovery, new map, save-as metadata, publish.
 //!
 //! First-run setup lives on the launcher card; see `startup::splash_ui`.
 
 use super::{EditorApp, ResizeAnchor};
 use crate::config::{DEFAULT_LICENSE, LICENSE_OPTIONS};
+use crate::publish;
 use wz_maplib::ResizeReport;
 use wz_maplib::constants::{MAP_MAX_WZ_EXPORT, world_coord};
 use wz_maplib::io_wz::WzArchiveKind;
@@ -844,4 +845,68 @@ fn commit_save_as_metadata(app: &mut EditorApp) {
     };
 
     app.save_to_wz(&path);
+}
+
+pub(super) fn show_publish_instructions_dialog(ctx: &egui::Context, app: &mut EditorApp) {
+    let mut open = app.publish_instructions_dialog.open;
+    let mut reveal_clicked = false;
+
+    egui::Window::new("Publish to Maps Database")
+        .collapsible(false)
+        .resizable(false)
+        .open(&mut open)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ui.set_max_width(520.0);
+            ui.label(format!(
+                "A submission form for \"{}\" is open in your browser.",
+                app.publish_instructions_dialog.map_name
+            ));
+            ui.add_space(8.0);
+            ui.label(
+                "Drag the file below into the \"Upload Map\" field, choose \
+                 the right Authorship option, then click \"Submit new \
+                 issue\". The submission bot will validate the map and post \
+                 back with a verdict.",
+            );
+            ui.add_space(8.0);
+            ui.group(|ui| {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(
+                            app.publish_instructions_dialog
+                                .zip_path
+                                .display()
+                                .to_string(),
+                        )
+                        .monospace(),
+                    )
+                    .wrap(),
+                );
+            });
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                #[cfg(target_os = "macos")]
+                let reveal_label = "Reveal in Finder";
+                #[cfg(target_os = "windows")]
+                let reveal_label = "Show in Explorer";
+                #[cfg(all(unix, not(target_os = "macos")))]
+                let reveal_label = "Open Folder";
+
+                if ui.button(reveal_label).clicked() {
+                    reveal_clicked = true;
+                }
+                if ui.button("Close").clicked() {
+                    app.publish_instructions_dialog.open = false;
+                }
+            });
+        });
+
+    if app.publish_instructions_dialog.open {
+        app.publish_instructions_dialog.open = open;
+    }
+
+    if reveal_clicked {
+        publish::reveal_in_file_manager(&app.publish_instructions_dialog.zip_path);
+    }
 }

@@ -557,12 +557,6 @@ pub fn show_online_tab(
         {
             state.page += 1;
         }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.hyperlink_to(
-                "Submit Map",
-                "https://github.com/Warzone2100/map-submission/blob/main/docs/submit_map.md",
-            );
-        });
     });
 
     ui.separator();

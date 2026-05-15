@@ -93,6 +93,8 @@ pub struct EditorApp {
     pub resize_map_dialog: ResizeMapDialog,
     /// Save As metadata dialog state.
     pub save_as_metadata_dialog: SaveAsMetadataDialog,
+    /// Post-publish drag-in instruction modal.
+    pub publish_instructions_dialog: PublishInstructionsDialog,
     /// Map generator dialog state.
     pub generator_dialog: crate::generator::dialog::GeneratorDialog,
     /// Game stats database (structures, features).
@@ -410,6 +412,7 @@ impl EditorApp {
             new_map_dialog: NewMapDialog::default(),
             resize_map_dialog: ResizeMapDialog::default(),
             save_as_metadata_dialog: SaveAsMetadataDialog::default(),
+            publish_instructions_dialog: PublishInstructionsDialog::default(),
             generator_dialog: crate::generator::dialog::GeneratorDialog::default(),
             stats: None,
             model_loader: None,
@@ -923,6 +926,9 @@ fn show_dialogs(ctx: &egui::Context, app: &mut EditorApp) {
     }
     if app.load_error_dialog.open {
         dialogs::show_load_error_dialog(ctx, app);
+    }
+    if app.publish_instructions_dialog.open {
+        dialogs::show_publish_instructions_dialog(ctx, app);
     }
 
     app.poll_test_process();

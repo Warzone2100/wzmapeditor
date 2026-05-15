@@ -210,6 +210,13 @@ pub struct SaveAsMetadataDialog {
     pub original_author: Option<String>,
 }
 
+#[derive(Debug, Default)]
+pub struct PublishInstructionsDialog {
+    pub open: bool,
+    pub zip_path: std::path::PathBuf,
+    pub map_name: String,
+}
+
 /// Which type and index of object is selected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SelectedObject {

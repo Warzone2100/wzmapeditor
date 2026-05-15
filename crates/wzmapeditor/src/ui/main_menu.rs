@@ -80,6 +80,19 @@ pub fn show_menu_bar(ui: &mut Ui, app: &mut EditorApp) {
                 ui.add_enabled(false, egui::Button::new("Save As..."));
             }
             ui.separator();
+            let can_publish = app.save_path.is_some();
+            if ui
+                .add_enabled(
+                    can_publish,
+                    egui::Button::new("Publish to Maps Database\u{2026}"),
+                )
+                .on_disabled_hover_text("Save the map to a .wz file first")
+                .clicked()
+            {
+                actions::publish_to_maps_db(app);
+                ui.close();
+            }
+            ui.separator();
             if ui.button("Open Config Folder").clicked() {
                 actions::open_config_dir(app);
                 ui.close();

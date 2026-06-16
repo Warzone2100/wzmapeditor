@@ -17,7 +17,8 @@ mod preview;
 
 pub use archive::{
     WzArchiveReader, extract_wz_to_dir, extract_wz_to_dir_filtered, extract_wz_to_dir_overwrite,
-    load_from_wz_archive, load_map_from_archive_prefix, read_wz_entry, save_to_wz_archive,
+    load_from_wz_archive, load_from_wz_reader, load_map_from_archive_prefix, read_wz_entry,
+    save_to_wz_archive, save_to_wz_writer,
 };
 pub use campaign::{load_campaign_level, load_campaign_level_by_name, read_campaign_index};
 pub use classify::{WzArchiveKind, classify_wz_archive};

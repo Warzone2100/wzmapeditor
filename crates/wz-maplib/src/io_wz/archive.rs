@@ -28,7 +28,22 @@ pub fn load_from_wz_archive(wz_path: &Path) -> Result<WzMap, MapError> {
         context: format!("opening {}", wz_path.display()),
         source: e,
     })?;
-    let mut archive = zip::ZipArchive::new(file)?;
+    let name_hint = wz_path.file_stem().map_or_else(
+        || "unnamed".to_string(),
+        |s| s.to_string_lossy().to_string(),
+    );
+    load_from_wz_reader(file, &name_hint)
+}
+
+/// Load a map from any seekable `.wz` archive (e.g. an in-memory buffer).
+///
+/// `name_hint` provides the map name for flattened archives that carry no
+/// path prefix; on disk this comes from the `.wz` filename stem.
+pub fn load_from_wz_reader<R: std::io::Read + std::io::Seek>(
+    reader: R,
+    name_hint: &str,
+) -> Result<WzMap, MapError> {
+    let mut archive = zip::ZipArchive::new(reader)?;
 
     let map_prefix = find_map_prefix(&archive)?;
     let map_name = {
@@ -38,11 +53,7 @@ pub fn load_from_wz_archive(wz_path: &Path) -> Result<WzMap, MapError> {
             .next()
             .unwrap_or("");
         if from_prefix.is_empty() {
-            // Flattened archive: derive name from the .wz filename.
-            wz_path.file_stem().map_or_else(
-                || "unnamed".to_string(),
-                |s| s.to_string_lossy().to_string(),
-            )
+            name_hint.to_string()
         } else {
             from_prefix.to_string()
         }
@@ -159,7 +170,20 @@ pub fn save_to_wz_archive(
         context: format!("creating {}", wz_path.display()),
         source: e,
     })?;
-    let mut zip = zip::ZipWriter::new(file);
+    save_to_wz_writer(map, file, format)?;
+    Ok(())
+}
+
+/// Serialize a map into a `.wz` archive written to `sink`, returning `sink`.
+///
+/// Returning the sink lets callers without a filesystem recover an
+/// in-memory buffer via `std::io::Cursor::into_inner`.
+pub fn save_to_wz_writer<W: std::io::Write + std::io::Seek>(
+    map: &WzMap,
+    sink: W,
+    format: OutputFormat,
+) -> Result<W, MapError> {
+    let mut zip = zip::ZipWriter::new(sink);
     let options = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated);
 
@@ -211,8 +235,8 @@ pub fn save_to_wz_archive(
         std::io::Write::write_all(&mut zip, json.as_bytes()).map_err(&io_err)?;
     }
 
-    zip.finish()?;
-    Ok(())
+    let sink = zip.finish()?;
+    Ok(sink)
 }
 
 /// Load a specific map from a multi-map `.wz` archive using its prefix.
@@ -450,19 +474,21 @@ pub fn read_wz_entry(wz_path: &Path, entry_name: &str) -> Option<Vec<u8>> {
 }
 
 /// A handle to an opened `.wz` archive for reading multiple entries without
-/// re-opening the file each time.
+/// re-opening the source each time.
+///
+/// Generic over the backing reader so it works over a `std::fs::File` on
+/// disk or a `std::io::Cursor<Vec<u8>>` for an archive held in memory.
 #[derive(Debug)]
-pub struct WzArchiveReader {
-    archive: zip::ZipArchive<std::fs::File>,
+pub struct WzArchiveReader<R = std::fs::File> {
+    archive: zip::ZipArchive<R>,
 }
 
-impl WzArchiveReader {
-    /// Open a `.wz` archive for batch reading.
+impl<R: std::io::Read + std::io::Seek> WzArchiveReader<R> {
+    /// Open a `.wz` archive from any seekable reader for batch reading.
     ///
-    /// Returns `None` if the file cannot be opened or is not a valid zip.
-    pub fn open(wz_path: &Path) -> Option<Self> {
-        let file = std::fs::File::open(wz_path).ok()?;
-        let archive = zip::ZipArchive::new(file).ok()?;
+    /// Returns `None` if the reader does not hold a valid zip.
+    pub fn from_reader(reader: R) -> Option<Self> {
+        let archive = zip::ZipArchive::new(reader).ok()?;
         Some(Self { archive })
     }
 
@@ -516,5 +542,67 @@ mod tests {
         assert!(output.join("texpages/page-1_sm.ktx2").exists());
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn wz_reader_writer_roundtrip_in_memory() {
+        let mut original = WzMap::new("4c-MemTest", 16, 16);
+        original.author = Some("tester".to_string());
+
+        let buf = save_to_wz_writer(
+            &original,
+            std::io::Cursor::new(Vec::new()),
+            OutputFormat::Ver3,
+        )
+        .expect("save to memory")
+        .into_inner();
+        assert!(!buf.is_empty());
+
+        let loaded = load_from_wz_reader(std::io::Cursor::new(buf), "unused-hint")
+            .expect("load from memory");
+        assert_eq!(loaded.map_name, original.map_name);
+        assert_eq!(loaded.players, original.players);
+        assert_eq!(loaded.tileset, original.tileset);
+        assert_eq!(loaded.author, original.author);
+    }
+
+    #[test]
+    fn wz_archive_reader_reads_entries_from_in_memory_cursor() {
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+            let opts = zip::write::SimpleFileOptions::default();
+            zip.start_file("texpages/tile.png", opts).unwrap();
+            zip.write_all(b"pixels").unwrap();
+            zip.finish().unwrap();
+        }
+
+        let mut reader = WzArchiveReader::from_reader(std::io::Cursor::new(buf))
+            .expect("open in-memory archive");
+        assert_eq!(
+            reader.read_entry("texpages/tile.png").as_deref(),
+            Some(&b"pixels"[..])
+        );
+        assert!(reader.read_entry("does/not/exist").is_none());
+    }
+
+    #[test]
+    fn wz_archive_reader_lists_entry_names() {
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+            let opts = zip::write::SimpleFileOptions::default();
+            zip.start_file("texpages/a.png", opts).unwrap();
+            zip.write_all(b"a").unwrap();
+            zip.start_file("stats/b.json", opts).unwrap();
+            zip.write_all(b"b").unwrap();
+            zip.finish().unwrap();
+        }
+
+        let reader = WzArchiveReader::from_reader(std::io::Cursor::new(buf))
+            .expect("open in-memory archive");
+        let mut names = reader.entry_names();
+        names.sort();
+        assert_eq!(names, vec!["stats/b.json", "texpages/a.png"]);
     }
 }

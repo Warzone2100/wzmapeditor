@@ -8,6 +8,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use crate::assets::AssetSource;
+
 /// Subdirectories under `data_dir` searched by the synchronous PIE loader.
 pub(crate) const PIE_SEARCH_DIRS: &[&str] = &[
     "base/components/prop",
@@ -48,32 +50,36 @@ pub(crate) fn find_pie_file(data_dir: &Path, imd_name: &str) -> Option<PathBuf> 
     None
 }
 
-/// Recursive file search rooted at `dir`. First match wins; depth is
+/// Recursive file search rooted at `dir_rel`. First match wins; depth is
 /// capped to avoid scanning the entire data tree.
-fn find_file_recursive(dir: &Path, filename: &str) -> Option<PathBuf> {
-    find_file_recursive_depth(dir, filename, 5)
+fn find_file_recursive(
+    assets: &dyn AssetSource,
+    dir_rel: &Path,
+    filename: &str,
+) -> Option<PathBuf> {
+    find_file_recursive_depth(assets, dir_rel, filename, 5)
 }
 
-fn find_file_recursive_depth(dir: &Path, filename: &str, max_depth: u32) -> Option<PathBuf> {
+fn find_file_recursive_depth(
+    assets: &dyn AssetSource,
+    dir_rel: &Path,
+    filename: &str,
+    max_depth: u32,
+) -> Option<PathBuf> {
     if max_depth == 0 {
         return None;
     }
 
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return None;
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_file()
-            && path
+    for child in assets.read_dir(dir_rel) {
+        if !assets.is_dir(&child)
+            && child
                 .file_name()
                 .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(filename))
         {
-            return Some(path);
+            return Some(child);
         }
-        if path.is_dir()
-            && let Some(found) = find_file_recursive_depth(&path, filename, max_depth - 1)
+        if assets.is_dir(&child)
+            && let Some(found) = find_file_recursive_depth(assets, &child, filename, max_depth - 1)
         {
             return Some(found);
         }
@@ -86,15 +92,13 @@ fn find_file_recursive_depth(dir: &Path, filename: &str, max_depth: u32) -> Opti
 /// `.ktx2` files under `data_dir/base/` and `data_dir/mp/`. Scanning
 /// once avoids per-model recursive searches, which otherwise dominate
 /// load time on large maps.
-pub(crate) fn build_pie_file_index(data_dir: &Path) -> HashMap<String, PathBuf> {
+pub(crate) fn build_pie_file_index(assets: &dyn AssetSource) -> HashMap<String, PathBuf> {
     let mut index = HashMap::new();
-    let base = data_dir.join("base");
-    if base.exists() {
-        index_directory_recursive(&base, &mut index, 6);
-    }
-    let mp = data_dir.join("mp");
-    if mp.exists() {
-        index_directory_recursive(&mp, &mut index, 6);
+    for subdir in ["base", "mp"] {
+        let root = Path::new(subdir);
+        if assets.is_dir(root) {
+            index_directory_recursive(assets, root, &mut index, 6);
+        }
     }
     let tcmask_count = index.keys().filter(|k| k.contains("tcmask")).count();
     log::info!(
@@ -105,30 +109,31 @@ pub(crate) fn build_pie_file_index(data_dir: &Path) -> HashMap<String, PathBuf> 
     index
 }
 
-fn index_directory_recursive(dir: &Path, index: &mut HashMap<String, PathBuf>, depth: u32) {
+fn index_directory_recursive(
+    assets: &dyn AssetSource,
+    dir_rel: &Path,
+    index: &mut HashMap<String, PathBuf>,
+    depth: u32,
+) {
     if depth == 0 {
         return;
     }
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            index_directory_recursive(&path, index, depth - 1);
-        } else if let Some(name) = path.file_name() {
+    for child in assets.read_dir(dir_rel) {
+        if assets.is_dir(&child) {
+            index_directory_recursive(assets, &child, index, depth - 1);
+        } else if let Some(name) = child.file_name() {
             let name_str = name.to_string_lossy();
-            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            let ext = child.extension().and_then(|e| e.to_str()).unwrap_or("");
             if ext.eq_ignore_ascii_case("pie")
                 || ext.eq_ignore_ascii_case("png")
                 || ext.eq_ignore_ascii_case("ktx2")
             {
                 index
                     .entry(name_str.to_string())
-                    .or_insert_with(|| path.clone());
+                    .or_insert_with(|| child.clone());
                 let lower = name_str.to_lowercase();
                 if lower != name_str.as_ref() {
-                    index.entry(lower).or_insert(path);
+                    index.entry(lower).or_insert(child);
                 }
             }
         }

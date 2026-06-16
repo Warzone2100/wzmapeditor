@@ -6,54 +6,51 @@ use crate::ui::tileset_browser::TilesetData;
 
 /// Load tileset textures from the configured data directory.
 pub(super) fn try_load_tileset(app: &mut EditorApp, ctx: &egui::Context) {
-    if let Some(tileset_dir) = app.config.tileset_dir_for(app.current_tileset) {
-        log::info!(
-            "Loading tileset {:?} from {}",
-            app.current_tileset,
-            tileset_dir.display()
-        );
-        if tileset_dir.exists() {
-            if let Some(ts) = TilesetData::load(ctx, &tileset_dir) {
-                app.log(format!(
-                    "Loaded {} {:?} tileset tiles",
-                    ts.tile_count(),
-                    app.current_tileset
-                ));
-                app.tileset = Some(ts);
-            }
+    let Some(assets) = app.assets.clone() else {
+        return;
+    };
+    let tileset_rel = std::path::PathBuf::from(app.current_tileset.subpath());
+    log::info!(
+        "Loading tileset {:?} from {}",
+        app.current_tileset,
+        tileset_rel.display()
+    );
 
-            let mut atlas_msg = None;
-            if let Some(ref render_state) = app.wgpu_render_state
-                && let Some(atlas) = crate::viewport::atlas::TileAtlas::build(&tileset_dir)
-            {
-                let device = &render_state.device;
-                let queue = &render_state.queue;
-                let mut egui_renderer = render_state.renderer.write();
-                if let Some(resources) = egui_renderer
-                    .callback_resources
-                    .get_mut::<crate::viewport::ViewportResources>()
-                {
-                    resources.renderer.upload_atlas(
-                        device,
-                        queue,
-                        &atlas.data,
-                        atlas.width,
-                        atlas.height,
-                    );
-                    atlas_msg = Some(format!(
-                        "Uploaded tileset atlas: {} tiles, {}x{}",
-                        atlas.tile_count, atlas.width, atlas.height
-                    ));
-                }
-            }
-            if let Some(msg) = atlas_msg {
-                app.log(msg);
-            }
+    if let Some(ts) = TilesetData::load(ctx, assets.as_ref(), &tileset_rel) {
+        app.log(format!(
+            "Loaded {} {:?} tileset tiles",
+            ts.tile_count(),
+            app.current_tileset
+        ));
+        app.tileset = Some(ts);
+    }
 
-            // Ground data loads separately after the editor window is
-            // visible so it doesn't block the first paint.
+    let mut atlas_msg = None;
+    if let Some(ref render_state) = app.wgpu_render_state
+        && let Some(atlas) = crate::viewport::atlas::TileAtlas::build(assets.as_ref(), &tileset_rel)
+    {
+        let device = &render_state.device;
+        let queue = &render_state.queue;
+        let mut egui_renderer = render_state.renderer.write();
+        if let Some(resources) = egui_renderer
+            .callback_resources
+            .get_mut::<crate::viewport::ViewportResources>()
+        {
+            resources
+                .renderer
+                .upload_atlas(device, queue, &atlas.data, atlas.width, atlas.height);
+            atlas_msg = Some(format!(
+                "Uploaded tileset atlas: {} tiles, {}x{}",
+                atlas.tile_count, atlas.width, atlas.height
+            ));
         }
     }
+    if let Some(msg) = atlas_msg {
+        app.log(msg);
+    }
+
+    // Ground data loads separately after the editor window is visible so it
+    // doesn't block the first paint.
 }
 
 /// Rebuild tile pools for the ground type brush from current ground and

@@ -3,7 +3,7 @@
 //! `ModelLoader::upload_prepared`.
 
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::mpsc;
 
@@ -32,20 +32,16 @@ pub struct PreparedModel {
 /// requested IMD. Fans out across `min(cores, 8)` threads sharing a
 /// single prebuilt file index.
 pub(crate) fn prepare_models_background(
-    data_dir: &Path,
+    assets: Arc<dyn crate::assets::AssetSource>,
     tileset_index: usize,
     names: Vec<String>,
 ) -> mpsc::Receiver<PreparedModel> {
     let (tx, rx) = mpsc::channel();
-    let data_dir = data_dir.to_path_buf();
 
+    #[cfg(not(target_arch = "wasm32"))]
     std::thread::spawn(move || {
-        let file_index = Arc::new(build_pie_file_index(&data_dir));
-        log::info!(
-            "PIE file index: {} files found under {}",
-            file_index.len(),
-            data_dir.display()
-        );
+        let file_index = Arc::new(build_pie_file_index(assets.as_ref()));
+        log::info!("PIE file index: {} files found", file_index.len());
 
         let num_threads = std::thread::available_parallelism()
             .map_or(4, std::num::NonZero::get)
@@ -57,13 +53,17 @@ pub(crate) fn prepare_models_background(
             for chunk in names.chunks(chunk_size.max(1)) {
                 let tx = tx.clone();
                 let file_index = Arc::clone(&file_index);
-                let data_dir = &data_dir;
+                let assets = Arc::clone(&assets);
                 let chunk: Vec<String> = chunk.to_vec();
 
                 handles.push(s.spawn(move || {
                     for imd_name in chunk {
-                        let prepared =
-                            prepare_model_offline(&imd_name, &file_index, data_dir, tileset_index);
+                        let prepared = prepare_model_offline(
+                            &imd_name,
+                            &file_index,
+                            assets.as_ref(),
+                            tileset_index,
+                        );
                         if tx.send(prepared).is_err() {
                             break;
                         }
@@ -141,7 +141,7 @@ pub(crate) fn precache_connectors_background(
                 continue;
             };
 
-            let Ok(content) = std::fs::read_to_string(pie_path) else {
+            let Some(content) = assets.text(pie_path) else {
                 connectors.insert(name.clone(), Vec::new());
                 continue;
             };
@@ -169,7 +169,7 @@ pub(crate) fn precache_connectors_background(
 fn prepare_model_offline(
     imd_name: &str,
     file_index: &HashMap<String, PathBuf>,
-    data_dir: &Path,
+    assets: &dyn crate::assets::AssetSource,
     tileset_index: usize,
 ) -> PreparedModel {
     let Some(pie_path) = lookup_in_index(file_index, imd_name) else {
@@ -177,12 +177,9 @@ fn prepare_model_offline(
         return empty_prepared(imd_name);
     };
 
-    let content = match std::fs::read_to_string(pie_path) {
-        Ok(c) => c,
-        Err(e) => {
-            log::warn!("Failed to read PIE file {}: {}", pie_path.display(), e);
-            return empty_prepared(imd_name);
-        }
+    let Some(content) = assets.text(pie_path) else {
+        log::warn!("Failed to read PIE file {}", pie_path.display());
+        return empty_prepared(imd_name);
     };
 
     let pie = match wz_pie::parse_pie(&content) {
@@ -199,8 +196,8 @@ fn prepare_model_offline(
         .filter(|s| !s.is_empty())
         .unwrap_or(&pie.texture_page);
 
-    let texture_data = load_texture_offline(data_dir, tex_page, file_index);
-    let tcmask_data = resolve_tcmask_offline(&pie, tex_page, data_dir, tileset_index, file_index);
+    let texture_data = load_texture_offline(assets, tex_page, file_index);
+    let tcmask_data = resolve_tcmask_offline(&pie, tex_page, assets, tileset_index, file_index);
 
     // HQ normal/specular maps live in terrain_overrides/high.wz; check
     // explicit PIE directives first, then auto-detect by suffix.
@@ -208,14 +205,14 @@ fn prepare_model_offline(
         pie.normal_page.as_ref(),
         tex_page,
         "_nm",
-        data_dir,
+        assets,
         file_index,
     );
     let specular_data = resolve_normal_specular_offline(
         pie.specular_page.as_ref(),
         tex_page,
         "_sm",
-        data_dir,
+        assets,
         file_index,
     );
 
@@ -247,8 +244,14 @@ fn empty_prepared(imd_name: &str) -> PreparedModel {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
     use wz_pie::PieModel;
+
+    fn fs(dir: &Path) -> crate::assets::FsAssetSource {
+        crate::assets::FsAssetSource::new(dir.to_path_buf())
+    }
 
     fn write_test_png(path: &Path) {
         let img = image::RgbaImage::from_raw(2, 2, vec![255u8; 16]).unwrap();
@@ -280,7 +283,7 @@ mod tests {
         let result = resolve_tcmask_offline(
             &pie,
             "page-11-player-buildings.png",
-            dir.path(),
+            &fs(dir.path()),
             0,
             &file_index,
         );
@@ -313,7 +316,7 @@ mod tests {
         let result = resolve_tcmask_offline(
             &pie,
             "page-11-player-buildings.png",
-            dir.path(),
+            &fs(dir.path()),
             0,
             &file_index,
         );
@@ -342,7 +345,7 @@ mod tests {
 
         let file_index = HashMap::new();
         let result =
-            resolve_tcmask_offline(&pie, "page-99-nothing.png", dir.path(), 0, &file_index);
+            resolve_tcmask_offline(&pie, "page-99-nothing.png", &fs(dir.path()), 0, &file_index);
         assert!(result.is_none());
     }
 
@@ -373,9 +376,12 @@ CONNECTORS 0
         write_test_png(&texpages.join("page-11_tcmask.png"));
 
         let mut file_index = HashMap::new();
-        file_index.insert("test.pie".to_string(), structs.join("test.pie"));
+        file_index.insert(
+            "test.pie".to_string(),
+            PathBuf::from("base/structs/test.pie"),
+        );
 
-        let prepared = prepare_model_offline("test.pie", &file_index, dir.path(), 0);
+        let prepared = prepare_model_offline("test.pie", &file_index, &fs(dir.path()), 0);
         assert_eq!(prepared.imd_name, "test.pie");
         assert!(prepared.mesh.is_some());
 
@@ -396,7 +402,7 @@ CONNECTORS 0
     fn prepare_model_offline_missing_pie_returns_empty() {
         let file_index = HashMap::new();
         let dir = tempfile::tempdir().unwrap();
-        let prepared = prepare_model_offline("nonexistent.pie", &file_index, dir.path(), 0);
+        let prepared = prepare_model_offline("nonexistent.pie", &file_index, &fs(dir.path()), 0);
         assert_eq!(prepared.imd_name, "nonexistent.pie");
         assert!(prepared.mesh.is_none());
         assert!(prepared.texture_data.is_none());
@@ -432,15 +438,19 @@ CONNECTORS 0
         write_test_png(&texpages.join("page-9-bases-rockies.png"));
 
         let mut file_index = HashMap::new();
-        file_index.insert("multi.pie".to_string(), structs.join("multi.pie"));
+        file_index.insert(
+            "multi.pie".to_string(),
+            PathBuf::from("base/structs/multi.pie"),
+        );
+        let assets = fs(dir.path());
 
-        let arizona = prepare_model_offline("multi.pie", &file_index, dir.path(), 0);
+        let arizona = prepare_model_offline("multi.pie", &file_index, &assets, 0);
         let az_page = arizona.texture_data.as_ref().unwrap().page_name.clone();
 
-        let urban = prepare_model_offline("multi.pie", &file_index, dir.path(), 1);
+        let urban = prepare_model_offline("multi.pie", &file_index, &assets, 1);
         let ur_page = urban.texture_data.as_ref().unwrap().page_name.clone();
 
-        let rockies = prepare_model_offline("multi.pie", &file_index, dir.path(), 2);
+        let rockies = prepare_model_offline("multi.pie", &file_index, &assets, 2);
         let rk_page = rockies.texture_data.as_ref().unwrap().page_name.clone();
 
         assert_eq!(az_page, "page-9-bases.png");

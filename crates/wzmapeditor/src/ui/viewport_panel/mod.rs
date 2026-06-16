@@ -172,12 +172,12 @@ pub fn show_viewport(ui: &mut Ui, app: &mut EditorApp) {
                         let map = &doc.map.map_data;
                         if let Some(ref ttp) = doc.map.terrain_types {
                             resources.renderer.upload_water(device, map, ttp);
-                            if let Some(ref data_dir) = app.config.data_dir {
-                                let texpages_dir = data_dir.join("base").join("texpages");
+                            if let Some(ref assets) = app.assets {
                                 resources.renderer.load_and_upload_water_textures(
                                     device,
                                     queue,
-                                    &texpages_dir,
+                                    assets.as_ref(),
+                                    std::path::Path::new("base/texpages"),
                                 );
                             }
                         } else {

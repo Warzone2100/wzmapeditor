@@ -25,17 +25,20 @@ impl std::fmt::Debug for TilesetData {
 impl TilesetData {
     /// Load `tile-XX.png` files (Arizona has 0..77) from a directory and
     /// upload them as egui textures.
-    pub fn load(ctx: &egui::Context, dir: &Path) -> Option<Self> {
+    pub fn load(
+        ctx: &egui::Context,
+        assets: &dyn crate::assets::AssetSource,
+        dir_rel: &Path,
+    ) -> Option<Self> {
         let mut tiles = Vec::new();
 
         for i in 0u16..256 {
             let filename = format!("tile-{i:02}.png");
-            let path = dir.join(&filename);
-            if !path.exists() {
+            let Some(bytes) = assets.bytes(&dir_rel.join(&filename)) else {
                 continue;
-            }
+            };
 
-            match load_tile_image(&path) {
+            match decode_tile_image(&bytes) {
                 Ok(color_image) => {
                     let handle =
                         ctx.load_texture(format!("tile_{i}"), color_image, TextureOptions::LINEAR);
@@ -48,14 +51,14 @@ impl TilesetData {
         }
 
         if tiles.is_empty() {
-            log::warn!("No tile images found in {}", dir.display());
+            log::warn!("No tile images found in {}", dir_rel.display());
             return None;
         }
 
         log::info!(
             "Loaded {} tileset tiles from {}",
             tiles.len(),
-            dir.display()
+            dir_rel.display()
         );
 
         Some(TilesetData { tiles })
@@ -94,24 +97,26 @@ impl TilesetData {
     }
 }
 
-fn load_tile_image(path: &Path) -> Result<ColorImage, String> {
-    let img = image::open(path).map_err(|e| format!("image::open failed: {e}"))?;
+fn decode_tile_image(bytes: &[u8]) -> Result<ColorImage, String> {
+    let img = image::load_from_memory(bytes).map_err(|e| format!("image decode failed: {e}"))?;
     let rgba = img.to_rgba8();
     let size = [rgba.width() as usize, rgba.height() as usize];
     let pixels = rgba.into_raw();
     Ok(ColorImage::from_rgba_unmultiplied(size, &pixels))
 }
 
-/// Load all `tile-NN.png` files from a directory. Safe to call off-thread.
-pub(crate) fn load_tile_images_from_dir(dir: &Path) -> Vec<(u16, ColorImage)> {
+/// Load all `tile-NN.png` files from a tileset directory. Safe to call off-thread.
+pub(crate) fn load_tile_images_from_dir(
+    assets: &dyn crate::assets::AssetSource,
+    dir_rel: &Path,
+) -> Vec<(u16, ColorImage)> {
     let mut tile_images = Vec::new();
     for i in 0u16..256 {
         let filename = format!("tile-{i:02}.png");
-        let path = dir.join(&filename);
-        if !path.exists() {
+        let Some(bytes) = assets.bytes(&dir_rel.join(&filename)) else {
             continue;
-        }
-        match load_tile_image(&path) {
+        };
+        match decode_tile_image(&bytes) {
             Ok(color_image) => {
                 tile_images.push((i, color_image));
             }

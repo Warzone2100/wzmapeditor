@@ -21,16 +21,13 @@ pub(crate) struct ParsedModel {
 /// `background.rs` and also probes for normal and specular maps via the
 /// prebuilt file index.
 pub(crate) fn load_pie_sync(
-    data_dir: &Path,
+    assets: &dyn crate::assets::AssetSource,
     pie_path: &Path,
     tileset_index: usize,
 ) -> Option<ParsedModel> {
-    let content = match std::fs::read_to_string(pie_path) {
-        Ok(c) => c,
-        Err(e) => {
-            log::warn!("Failed to read PIE file {}: {}", pie_path.display(), e);
-            return None;
-        }
+    let Some(content) = assets.text(pie_path) else {
+        log::warn!("Failed to read PIE file {}", pie_path.display());
+        return None;
     };
 
     let pie = match wz_pie::parse_pie(&content) {
@@ -46,7 +43,7 @@ pub(crate) fn load_pie_sync(
         .get(tileset_index)
         .filter(|s| !s.is_empty())
         .unwrap_or(&pie.texture_page);
-    let texture_data = load_texture_simple(data_dir, tex_page);
+    let texture_data = load_texture_simple(assets, tex_page);
 
     if texture_data.is_none() {
         log::warn!(
@@ -58,7 +55,7 @@ pub(crate) fn load_pie_sync(
         );
     }
 
-    let tcmask_data = resolve_tcmask_simple(data_dir, &pie, tex_page, tileset_index);
+    let tcmask_data = resolve_tcmask_simple(assets, &pie, tex_page, tileset_index);
 
     Some(ParsedModel {
         pie,

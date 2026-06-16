@@ -20,12 +20,11 @@ pub(super) fn start_ground_data_load(app: &mut EditorApp) {
         crate::config::Tileset::Urban => "urban",
         crate::config::Tileset::Rockies => "rockies",
     };
-    // Reuse ground data from the pre-cache if available, otherwise load from disk.
     let gd = if let Some(cached) = app.rt.precached_ground_data.remove(tileset_name) {
         log::info!("Reusing pre-cached ground data for {tileset_name}");
         cached
     } else if let Some(gd) =
-        crate::viewport::ground_types::GroundData::load(&data_dir, tileset_name)
+        crate::viewport::ground_types::GroundData::load(assets.as_ref(), tileset_name)
     {
         gd
     } else {
@@ -38,11 +37,11 @@ pub(super) fn start_ground_data_load(app: &mut EditorApp) {
     // flags alongside the texture data. The override happens in
     // poll_ground_texture_load after the thread completes.
 
-    let texpages_dir = data_dir.join("base").join("texpages");
+    let texpages_rel = std::path::PathBuf::from("base/texpages");
     let ground_types = gd.ground_types.clone();
     let num_decal_tiles = gd.tile_grounds.len() as u32;
-    let tileset_128_dir = data_dir.join(app.current_tileset.subpath());
-    let tileset_256_dir = data_dir.join(app.current_tileset.subpath_256());
+    let tileset_128_rel = std::path::PathBuf::from(app.current_tileset.subpath());
+    let tileset_256_rel = std::path::PathBuf::from(app.current_tileset.subpath_256());
     let base_wz_path = app
         .config
         .game_install_dir
@@ -60,24 +59,29 @@ pub(super) fn start_ground_data_load(app: &mut EditorApp) {
     let load_progress = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
     let load_progress_clone = load_progress.clone();
 
-    std::thread::spawn(move || {
+    let work = move || {
         // 6 steps total - report progress after each (thousandths: 0..1000).
-        let diffuse =
-            crate::viewport::renderer::load_ground_texture_data(&texpages_dir, &ground_types);
+        let diffuse = crate::viewport::renderer::load_ground_texture_data(
+            assets.as_ref(),
+            &texpages_rel,
+            &ground_types,
+        );
         load_progress_clone.store(167, std::sync::atomic::Ordering::Relaxed); // 1/6
 
         // Always load normal/specular maps - the loader generates sensible
         // defaults (flat normals, zero specular) for missing files, so the
         // High quality pipeline works even without dedicated _nm/_sm assets.
         let nm = crate::viewport::renderer::load_ground_normal_specular_data(
-            &texpages_dir,
+            assets.as_ref(),
+            &texpages_rel,
             &ground_types,
             "_nm",
         );
         load_progress_clone.store(333, std::sync::atomic::Ordering::Relaxed); // 2/6
 
         let sm = crate::viewport::renderer::load_ground_normal_specular_data(
-            &texpages_dir,
+            assets.as_ref(),
+            &texpages_rel,
             &ground_types,
             "_sm",
         );
@@ -86,25 +90,31 @@ pub(super) fn start_ground_data_load(app: &mut EditorApp) {
         // Load decal tile textures from the original base.wz (preserves alpha
         // that classic.wz overlay removes). Also returns per-tile alpha flags
         // for correct decal detection.
+        let base_archive = base_wz_path
+            .as_deref()
+            .and_then(wz_maplib::io_wz::WzArchiveReader::open);
         let (decal_diffuse, _decal_alpha_flags) =
             crate::viewport::renderer::load_decal_texture_data_from_wz(
-                base_wz_path.as_deref(),
+                base_archive,
                 &tileset_subpath,
-                &tileset_128_dir,
-                &tileset_256_dir,
+                assets.as_ref(),
+                &tileset_128_rel,
+                &tileset_256_rel,
                 num_decal_tiles,
             );
         load_progress_clone.store(667, std::sync::atomic::Ordering::Relaxed); // 4/6
 
         let dn = crate::viewport::renderer::load_decal_normal_specular_data(
-            &tileset_256_dir,
+            assets.as_ref(),
+            &tileset_256_rel,
             num_decal_tiles,
             "_nm",
         );
         load_progress_clone.store(833, std::sync::atomic::Ordering::Relaxed); // 5/6
 
         let ds = crate::viewport::renderer::load_decal_normal_specular_data(
-            &tileset_256_dir,
+            assets.as_ref(),
+            &tileset_256_rel,
             num_decal_tiles,
             "_sm",
         );
@@ -208,6 +218,9 @@ pub(super) fn set_data_dir(app: &mut EditorApp, dir: std::path::PathBuf, _ctx: &
     // on-disk: thumbnails, ground texture cache, tileset textures. Only a
     // real dir change should invalidate caches keyed by content.
     let same_dir = app.config.data_dir.as_deref() == Some(dir.as_path());
+    app.assets = Some(std::sync::Arc::new(crate::assets::FsAssetSource::new(
+        dir.clone(),
+    )));
     app.config.data_dir = Some(dir);
     app.config.save();
     if same_dir {
@@ -236,6 +249,30 @@ fn detect_hq_textures(data_dir: &std::path::Path) -> bool {
         }
     }
     false
+}
+
+/// Resolve the native startup asset wiring from the configured data directory.
+///
+/// Returns the asset source rooted at `data_dir` (when one is configured) and
+/// whether Remastered (HQ) terrain textures are present. `EditorApp::new`
+/// cannot call [`set_data_dir`] (it defers cache invalidation to a later
+/// frame), so the constructor uses this to make the asset source and HQ flag
+/// live before the first background load — without it the model loader is never
+/// built and the HQ terrain option stays disabled.
+#[cfg(not(target_arch = "wasm32"))]
+pub(super) fn native_asset_init(
+    config: &crate::config::EditorConfig,
+) -> (Option<std::sync::Arc<dyn crate::assets::AssetSource>>, bool) {
+    match config.data_dir.as_deref() {
+        Some(dir) => (
+            Some(
+                std::sync::Arc::new(crate::assets::FsAssetSource::new(dir.to_path_buf()))
+                    as std::sync::Arc<dyn crate::assets::AssetSource>,
+            ),
+            detect_hq_textures(dir),
+        ),
+        None => (None, false),
+    }
 }
 
 /// Begin background extraction of `base.wz` into the persistent cache directory.
@@ -378,49 +415,182 @@ pub(super) fn try_load_stats(app: &mut EditorApp, ctx: &egui::Context) {
     let Some(data_dir) = app.config.data_dir.clone() else {
         return;
     };
+    let assets: std::sync::Arc<dyn crate::assets::AssetSource> =
+        app.assets.clone().unwrap_or_else(|| {
+            std::sync::Arc::new(crate::assets::FsAssetSource::new(data_dir.clone()))
+        });
+
+    let (db, base_template_count, mp_present) =
+        match load_stats_database(&data_dir, assets.as_ref()) {
+            Ok(Some(loaded)) => loaded,
+            Ok(None) => return,
+            Err(e) => {
+                app.log(format!("Failed to load stats: {e}"));
+                return;
+            }
+        };
+
+    if !mp_present {
+        let msg = "mp/stats/ missing; skirmish-only droid templates \
+             (Cobra/Mantis/Python/Tiger/Vengeance variants) won't be available \
+             and campaign-only templates can't be filtered"
+            .to_string();
+        log::warn!("{msg}");
+        app.log(msg);
+    }
+    app.log(format!(
+        "Loaded stats: {} structures, {} features, {} bodies, \
+         {} templates ({} base + {} mp-only)",
+        db.structures.len(),
+        db.features.len(),
+        db.bodies.len(),
+        db.templates.len(),
+        base_template_count,
+        db.templates.len().saturating_sub(base_template_count),
+    ));
+    app.model_loader = Some(ModelLoader::new(assets, &db));
+    app.stats = Some(db);
+    app.objects_dirty = true;
+    if app.validation_results.is_some() {
+        app.run_validation();
+    }
+    ctx.request_repaint();
+}
+
+/// Load the base stats database and merge the `mp/stats` overlay when present.
+///
+/// Returns the database, its pre-merge template count, and whether an mp overlay
+/// was found; `Ok(None)` when no base stats exist. Native reads the filesystem
+/// directly so read errors surface; a failed mp merge is logged, not fatal.
+#[cfg(not(target_arch = "wasm32"))]
+fn load_stats_database(
+    data_dir: &std::path::Path,
+    _assets: &dyn crate::assets::AssetSource,
+) -> Result<Option<(wz_stats::StatsDatabase, usize, bool)>, wz_stats::StatsError> {
     let stats_dir = data_dir.join("base/stats");
     if !stats_dir.exists() {
-        return;
+        return Ok(None);
     }
-    match wz_stats::StatsDatabase::load_from_dir(&stats_dir) {
-        Ok(mut db) => {
-            let base_template_count = db.templates.len();
-            let mp_stats_dir = data_dir.join("mp").join("stats");
-            log::info!("Looking for mp stats at: {}", mp_stats_dir.display());
-            if mp_stats_dir.exists() {
-                if let Err(e) = db.merge_from_dir(&mp_stats_dir) {
-                    log::warn!("Failed to merge mp stats: {e}");
-                }
-            } else {
-                let msg = format!(
-                    "mp/stats/ missing at {}; skirmish-only droid templates \
-                     (Cobra/Mantis/Python/Tiger/Vengeance variants) won't be \
-                     available and campaign-only templates can't be filtered",
-                    mp_stats_dir.display()
-                );
-                log::warn!("{msg}");
-                app.log(msg);
-            }
-            app.log(format!(
-                "Loaded stats: {} structures, {} features, {} bodies, \
-                 {} templates ({} base + {} mp-only)",
-                db.structures.len(),
-                db.features.len(),
-                db.bodies.len(),
-                db.templates.len(),
-                base_template_count,
-                db.templates.len().saturating_sub(base_template_count),
-            ));
-            app.model_loader = Some(ModelLoader::new(&data_dir, &db));
-            app.stats = Some(db);
-            app.objects_dirty = true;
-            if app.validation_results.is_some() {
-                app.run_validation();
-            }
-            ctx.request_repaint();
+    let mut db = wz_stats::StatsDatabase::load_from_dir(&stats_dir)?;
+    let base_template_count = db.templates.len();
+    let mp_stats_dir = data_dir.join("mp/stats");
+    let mp_present = mp_stats_dir.exists();
+    if mp_present && let Err(e) = db.merge_from_dir(&mp_stats_dir) {
+        log::warn!("Failed to merge mp stats: {e}");
+    }
+    Ok(Some((db, base_template_count, mp_present)))
+}
+
+/// Web variant of [`load_stats_database`]: reads the in-memory `.wz` VFS.
+///
+/// The VFS returns `None` for absent or unreadable entries alike, matching the
+/// rest of the web asset pipeline.
+#[cfg(target_arch = "wasm32")]
+fn load_stats_database(
+    _data_dir: &std::path::Path,
+    assets: &dyn crate::assets::AssetSource,
+) -> Result<Option<(wz_stats::StatsDatabase, usize, bool)>, wz_stats::StatsError> {
+    let base_stats = std::path::Path::new("base/stats");
+    if !assets.is_dir(base_stats) {
+        return Ok(None);
+    }
+    let mut db =
+        wz_stats::StatsDatabase::load_from_source(|name| Ok(assets.text(&base_stats.join(name))))?;
+    let base_template_count = db.templates.len();
+    let mp_stats = std::path::Path::new("mp/stats");
+    let mp_present = assets.is_dir(mp_stats);
+    if mp_present && let Err(e) = db.merge_from_source(|name| Ok(assets.text(&mp_stats.join(name))))
+    {
+        log::warn!("Failed to merge mp stats: {e}");
+    }
+    Ok(Some((db, base_template_count, mp_present)))
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use crate::config::EditorConfig;
+
+    fn config_with_data_dir(dir: Option<std::path::PathBuf>) -> EditorConfig {
+        EditorConfig {
+            data_dir: dir,
+            ..EditorConfig::default()
         }
-        Err(e) => {
-            app.log(format!("Failed to load stats: {e}"));
-        }
+    }
+
+    #[test]
+    fn detect_hq_textures_true_when_hw256_dir_present() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let texpages = tmp.path().join("base").join("texpages");
+        std::fs::create_dir_all(texpages.join("tertilesc2hw-256")).expect("mkdir");
+        assert!(super::detect_hq_textures(tmp.path()));
+    }
+
+    #[test]
+    fn detect_hq_textures_false_without_hw256_dir() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(tmp.path().join("base").join("texpages")).expect("mkdir");
+        assert!(!super::detect_hq_textures(tmp.path()));
+    }
+
+    #[test]
+    fn native_asset_init_builds_source_and_detects_hq() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(
+            tmp.path()
+                .join("base")
+                .join("texpages")
+                .join("tertilesc1hw-256"),
+        )
+        .expect("mkdir");
+        let config = config_with_data_dir(Some(tmp.path().to_path_buf()));
+        let (assets, has_hq) = super::native_asset_init(&config);
+        // A configured data dir must yield a live asset source, otherwise the
+        // model loader is never built and thumbnails/textures never load.
+        assert!(
+            assets.is_some(),
+            "expected an asset source for a set data_dir"
+        );
+        assert!(has_hq, "expected HQ detection from the hw-256 dir");
+    }
+
+    #[test]
+    fn native_asset_init_enables_model_loader() {
+        // Regression guard for the bug that produced zero thumbnails: the
+        // preload renders nothing without a model loader, and the loader is
+        // only built (in the stats-load handler) when startup hands back an
+        // asset source. If a configured data dir yields `None` here, the loader
+        // step is silently skipped and no thumbnails ever generate.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(tmp.path().join("base").join("texpages")).expect("mkdir");
+        let config = config_with_data_dir(Some(tmp.path().to_path_buf()));
+        let (assets, _) = super::native_asset_init(&config);
+        let assets = assets.expect("a configured data dir must yield an asset source");
+        // Mirrors the stats-load handler; building this is what unblocks the
+        // thumbnail preload. No GPU is required to construct the loader.
+        let _loader = crate::viewport::model_loader::ModelLoader::new(
+            assets,
+            &wz_stats::StatsDatabase::default(),
+        );
+    }
+
+    #[test]
+    fn native_asset_init_source_present_without_hq() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(tmp.path().join("base").join("texpages")).expect("mkdir");
+        let config = config_with_data_dir(Some(tmp.path().to_path_buf()));
+        let (assets, has_hq) = super::native_asset_init(&config);
+        assert!(
+            assets.is_some(),
+            "expected an asset source for a set data_dir"
+        );
+        assert!(!has_hq, "no hw-256 dir means HQ must be unavailable");
+    }
+
+    #[test]
+    fn native_asset_init_none_without_data_dir() {
+        let config = config_with_data_dir(None);
+        let (assets, has_hq) = super::native_asset_init(&config);
+        assert!(assets.is_none());
+        assert!(!has_hq);
     }
 }

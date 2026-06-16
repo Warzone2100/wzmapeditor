@@ -47,8 +47,8 @@ impl GroundData {
     /// - `tertilesc{N}hwGtype.txt` - ground type names, textures, scales
     /// - `{tileset}ground.txt` - per-tile corner ground types
     /// - `{tileset}decals.txt` - decal tile indices
-    pub fn load(data_dir: &Path, tileset: &str) -> Option<Self> {
-        let tileset_dir = data_dir.join("base").join("tileset");
+    pub fn load(assets: &dyn crate::assets::AssetSource, tileset: &str) -> Option<Self> {
+        let tileset_rel = Path::new("base").join("tileset");
 
         let (gtype_file, ground_file, decals_file) = match tileset {
             "arizona" => (
@@ -72,16 +72,25 @@ impl GroundData {
             }
         };
 
-        let texpages_dir = data_dir.join("base").join("texpages");
-        let mut ground_types = parse_gtype_file(&tileset_dir.join(gtype_file))?;
+        let texpages_rel = Path::new("base").join("texpages");
+        let Some(gtype_content) = assets.text(&tileset_rel.join(gtype_file)) else {
+            log::warn!("Failed to read ground type file {gtype_file}");
+            return None;
+        };
+        let mut ground_types = parse_gtype_content(&gtype_content)?;
 
-        // Probe for _nm/_sm texture variants on disk (PNG or KTX2).
         // WZ2100 ships these as optional files; most installs don't have them.
-        probe_high_quality_textures(&mut ground_types, &texpages_dir);
+        probe_high_quality_textures(&mut ground_types, assets, &texpages_rel);
 
         let name_to_index = build_name_index(&ground_types);
-        let tile_grounds = parse_ground_file(&tileset_dir.join(ground_file), &name_to_index)?;
-        let decal_tiles = parse_decals_file(&tileset_dir.join(decals_file), tile_grounds.len());
+        let ground_content = assets.text(&tileset_rel.join(ground_file))?;
+        let tile_grounds = parse_ground_content(&ground_content, &name_to_index)?;
+        let decal_tiles = if let Some(content) = assets.text(&tileset_rel.join(decals_file)) {
+            parse_decals_content(&content, tile_grounds.len())
+        } else {
+            log::warn!("Failed to read {decals_file} (decals will be disabled)");
+            vec![false; tile_grounds.len()]
+        };
 
         let mut ground_scales = [1.0f32; 16];
         for (i, gt) in ground_types.iter().enumerate() {
@@ -256,15 +265,7 @@ fn append_to_filename(filename: &str, suffix: &str) -> String {
 }
 
 /// Parse `tertilesc{N}hwGtype.txt` - ground type names, textures, and scales.
-fn parse_gtype_file(path: &Path) -> Option<Vec<GroundTexture>> {
-    let content = match std::fs::read_to_string(path) {
-        Ok(c) => c,
-        Err(e) => {
-            log::warn!("Failed to read {}: {e}", path.display());
-            return None;
-        }
-    };
-
+fn parse_gtype_content(content: &str) -> Option<Vec<GroundTexture>> {
     let mut lines = content.lines();
     // First line: "tertilesc1hw,8" (tileset name, count)
     let header = lines.next()?;
@@ -298,19 +299,23 @@ fn parse_gtype_file(path: &Path) -> Option<Vec<GroundTexture>> {
 /// filename fields when at least one variant form is found, so
 /// `has_high_quality` remains `false` for installs that lack them
 /// (which is the norm - WZ2100 ships the hooks but not the assets).
-fn probe_high_quality_textures(ground_types: &mut [GroundTexture], texpages_dir: &Path) {
+fn probe_high_quality_textures(
+    ground_types: &mut [GroundTexture],
+    assets: &dyn crate::assets::AssetSource,
+    texpages_rel: &Path,
+) {
     let cache_dir = crate::config::ground_cache_dir();
     let mut found_any = false;
 
     for gt in ground_types.iter_mut() {
         let nm = append_to_filename(&gt.filename, "_nm");
-        if texture_exists(texpages_dir, &cache_dir, &nm) {
+        if texture_exists(assets, texpages_rel, &cache_dir, &nm) {
             gt.normal_filename = Some(nm);
             found_any = true;
         }
 
         let sm = append_to_filename(&gt.filename, "_sm");
-        if texture_exists(texpages_dir, &cache_dir, &sm) {
+        if texture_exists(assets, texpages_rel, &cache_dir, &sm) {
             gt.specular_filename = Some(sm);
             found_any = true;
         }
@@ -332,14 +337,22 @@ fn probe_high_quality_textures(ground_types: &mut [GroundTexture], texpages_dir:
 }
 
 /// Check if a ground texture exists in any supported form.
-fn texture_exists(texpages_dir: &Path, cache_dir: &Path, filename: &str) -> bool {
+///
+/// The cached `.bin` lives under the config dir, not the data root, so it is
+/// probed directly rather than through the asset source (native-only).
+fn texture_exists(
+    assets: &dyn crate::assets::AssetSource,
+    texpages_rel: &Path,
+    cache_dir: &Path,
+    filename: &str,
+) -> bool {
     // PNG source
-    if texpages_dir.join(filename).exists() {
+    if assets.exists(&texpages_rel.join(filename)) {
         return true;
     }
     // KTX2 (installed game)
     let ktx2 = filename.replace(".png", ".ktx2");
-    if texpages_dir.join(&ktx2).exists() {
+    if assets.exists(&texpages_rel.join(&ktx2)) {
         return true;
     }
     // Cached raw .bin
@@ -364,15 +377,7 @@ fn build_name_index(types: &[GroundTexture]) -> HashMap<String, u8> {
 /// File format: `val1,val2,val3,val4` per line. WZ2100 mapping:
 /// - `map[i][0][0]` = val4, `map[i][0][1]` = val2
 /// - `map[i][1][0]` = val3, `map[i][1][1]` = val1
-fn parse_ground_file(path: &Path, name_index: &HashMap<String, u8>) -> Option<Vec<[u8; 4]>> {
-    let content = match std::fs::read_to_string(path) {
-        Ok(c) => c,
-        Err(e) => {
-            log::warn!("Failed to read {}: {e}", path.display());
-            return None;
-        }
-    };
-
+fn parse_ground_content(content: &str, name_index: &HashMap<String, u8>) -> Option<Vec<[u8; 4]>> {
     let mut lines = content.lines();
     // Header: "arizona_ground,78"
     let header = lines.next()?;
@@ -407,19 +412,8 @@ fn parse_ground_file(path: &Path, name_index: &HashMap<String, u8>) -> Option<Ve
 }
 
 /// Parse `{tileset}decals.txt` - tile indices that are decals.
-fn parse_decals_file(path: &Path, num_tiles: usize) -> Vec<bool> {
+fn parse_decals_content(content: &str, num_tiles: usize) -> Vec<bool> {
     let mut decals = vec![false; num_tiles];
-
-    let content = match std::fs::read_to_string(path) {
-        Ok(c) => c,
-        Err(e) => {
-            log::warn!(
-                "Failed to read {}: {e} (decals will be disabled)",
-                path.display()
-            );
-            return decals;
-        }
-    };
 
     let mut lines = content.lines();
     // Header: "arizona_decals,29"
@@ -443,6 +437,10 @@ fn parse_decals_file(path: &Path, num_tiles: usize) -> Vec<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fs(dir: &std::path::Path) -> crate::assets::FsAssetSource {
+        crate::assets::FsAssetSource::new(dir.to_path_buf())
+    }
 
     #[test]
     fn rot_flip_identity() {
@@ -486,7 +484,8 @@ mod tests {
             "test_tileset,3\na_sand,page-1-sand.png,6.4\na_rock,page-2-rock.png,5.0\na_water,page-3-water.png,3.2\n",
         ).unwrap();
 
-        let types = parse_gtype_file(&dir.join("test_gtype.txt")).unwrap();
+        let content = std::fs::read_to_string(dir.join("test_gtype.txt")).unwrap();
+        let types = parse_gtype_content(&content).unwrap();
         assert_eq!(types.len(), 3);
         assert_eq!(types[0].name, "a_sand");
         assert_eq!(types[0].filename, "page-1-sand.png");
@@ -513,7 +512,8 @@ mod tests {
         )
         .unwrap();
 
-        let grounds = parse_ground_file(&dir.join("test_ground.txt"), &name_index).unwrap();
+        let content = std::fs::read_to_string(dir.join("test_ground.txt")).unwrap();
+        let grounds = parse_ground_content(&content, &name_index).unwrap();
         assert_eq!(grounds.len(), 1);
         // val1=a_rock, val2=a_sand, val3=a_rock, val4=a_sand
         // [0][0]=val4=a_sand=0, [0][1]=val2=a_sand=0, [1][0]=val3=a_rock=1, [1][1]=val1=a_rock=1
@@ -529,7 +529,8 @@ mod tests {
 
         std::fs::write(dir.join("test_decals.txt"), "test_decals,2\n05\n10\n").unwrap();
 
-        let decals = parse_decals_file(&dir.join("test_decals.txt"), 20);
+        let content = std::fs::read_to_string(dir.join("test_decals.txt")).unwrap();
+        let decals = parse_decals_content(&content, 20);
         assert!(!decals[0]);
         assert!(decals[5]);
         assert!(decals[10]);
@@ -577,8 +578,18 @@ mod tests {
         let cache_dir = std::env::temp_dir().join("wz_test_tex_exists_cache_empty");
         let _ = std::fs::create_dir_all(&cache_dir);
 
-        assert!(texture_exists(&dir, &cache_dir, "page-1.png"));
-        assert!(!texture_exists(&dir, &cache_dir, "page-99.png"));
+        assert!(texture_exists(
+            &fs(&dir),
+            std::path::Path::new(""),
+            &cache_dir,
+            "page-1.png"
+        ));
+        assert!(!texture_exists(
+            &fs(&dir),
+            std::path::Path::new(""),
+            &cache_dir,
+            "page-99.png"
+        ));
 
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_dir_all(&cache_dir);
@@ -593,7 +604,12 @@ mod tests {
         let cache_dir = std::env::temp_dir().join("wz_test_tex_exists_ktx2_cache");
         let _ = std::fs::create_dir_all(&cache_dir);
 
-        assert!(texture_exists(&dir, &cache_dir, "page-1.png"));
+        assert!(texture_exists(
+            &fs(&dir),
+            std::path::Path::new(""),
+            &cache_dir,
+            "page-1.png"
+        ));
 
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_dir_all(&cache_dir);
@@ -607,8 +623,18 @@ mod tests {
         let _ = std::fs::create_dir_all(&cache_dir);
         std::fs::write(cache_dir.join("page-1.bin"), b"raw").unwrap();
 
-        assert!(texture_exists(&texpages, &cache_dir, "page-1.png"));
-        assert!(!texture_exists(&texpages, &cache_dir, "page-2.png"));
+        assert!(texture_exists(
+            &fs(&texpages),
+            std::path::Path::new(""),
+            &cache_dir,
+            "page-1.png"
+        ));
+        assert!(!texture_exists(
+            &fs(&texpages),
+            std::path::Path::new(""),
+            &cache_dir,
+            "page-2.png"
+        ));
 
         let _ = std::fs::remove_dir_all(&texpages);
         let _ = std::fs::remove_dir_all(&cache_dir);
@@ -639,7 +665,7 @@ mod tests {
             },
         ];
 
-        probe_high_quality_textures(&mut types, &dir);
+        probe_high_quality_textures(&mut types, &fs(&dir), std::path::Path::new(""));
 
         assert_eq!(
             types[0].normal_filename.as_deref(),
@@ -669,7 +695,7 @@ mod tests {
             specular_filename: None,
         }];
 
-        probe_high_quality_textures(&mut types, &dir);
+        probe_high_quality_textures(&mut types, &fs(&dir), std::path::Path::new(""));
         assert!(types[0].normal_filename.is_none());
         assert!(types[0].specular_filename.is_none());
 

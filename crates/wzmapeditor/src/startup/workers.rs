@@ -53,6 +53,9 @@ pub fn poll_startup_loads(ctx: &egui::Context, app: &mut EditorApp) {
                     // Like set_data_dir but skip clearing tileset/stats
                     // flags, those haven't been loaded yet.
                     app.config.data_dir = Some(data_dir.clone());
+                    app.assets = Some(std::sync::Arc::new(crate::assets::FsAssetSource::new(
+                        data_dir.clone(),
+                    )));
                     app.config.save();
 
                     // Spawn tileset + stats threads now that dirs exist.
@@ -183,8 +186,8 @@ pub fn poll_startup_loads(ctx: &egui::Context, app: &mut EditorApp) {
                 db.structures.len(),
                 db.features.len()
             ));
-            if let Some(ref data_dir) = app.config.data_dir {
-                app.model_loader = Some(ModelLoader::new(data_dir, &db));
+            if let Some(assets) = app.assets.clone() {
+                app.model_loader = Some(ModelLoader::new(assets, &db));
             }
             app.stats = Some(db);
             app.objects_dirty = true;
@@ -358,12 +361,13 @@ pub(crate) fn precache_ground_textures(
 
     let tilesets = ["arizona", "urban", "rockies"];
     let texpages_dir = data_dir.join("base").join("texpages");
+    let assets = crate::assets::FsAssetSource::new(data_dir.to_path_buf());
 
     let mut seen = std::collections::HashSet::new();
     let mut filenames: Vec<String> = Vec::new();
     let mut loaded_ground_data = std::collections::HashMap::new();
     for tileset in &tilesets {
-        if let Some(gd) = GroundData::load(data_dir, tileset) {
+        if let Some(gd) = GroundData::load(&assets, tileset) {
             for gt in &gd.ground_types {
                 if seen.insert(gt.filename.clone()) {
                     filenames.push(gt.filename.clone());

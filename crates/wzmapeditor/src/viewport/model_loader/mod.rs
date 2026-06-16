@@ -5,7 +5,6 @@
 //! threads; only the GPU upload stays on the main thread.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc;
 
@@ -48,11 +47,12 @@ impl std::fmt::Debug for ModelLoader {
 }
 
 impl ModelLoader {
-    /// Create a new model loader from the data directory and stats database.
-    pub fn new(data_dir: &Path, stats: &StatsDatabase) -> Self {
+    /// Create a new model loader from the asset source and stats database.
+    pub fn new(assets: Arc<dyn crate::assets::AssetSource>, stats: &StatsDatabase) -> Self {
         Self {
-            data_dir: data_dir.to_path_buf(),
+            assets,
             cache: LoaderCache::new(stats),
+            pie_file_index: None,
         }
     }
 
@@ -143,7 +143,7 @@ impl ModelLoader {
         stats: &StatsDatabase,
     ) -> mpsc::Receiver<HashMap<String, Vec<glam::Vec3>>> {
         let already_cached = self.cache.connector_key_snapshot();
-        background::precache_connectors_background(&self.data_dir, stats, &already_cached)
+        background::precache_connectors_background(self.assets.clone(), stats, &already_cached)
     }
 
     /// Merge pre-cached connector data into the loader's connector cache.
@@ -157,7 +157,11 @@ impl ModelLoader {
 
     /// Spawn background threads to prepare models for GPU upload.
     pub fn prepare_models_background(&self, names: Vec<String>) -> mpsc::Receiver<PreparedModel> {
-        background::prepare_models_background(&self.data_dir, self.cache.tileset_index(), names)
+        background::prepare_models_background(
+            self.assets.clone(),
+            self.cache.tileset_index(),
+            names,
+        )
     }
 
     /// Upload a model that was prepared on a background thread.

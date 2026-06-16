@@ -130,6 +130,9 @@ pub struct EditorApp {
     pub map_players: u8,
     /// Loaded ground type data for the current tileset (Medium terrain quality).
     pub ground_data: Option<crate::viewport::ground_types::GroundData>,
+    /// Source for game-asset bytes (native filesystem or, on the web build,
+    /// an in-memory archive). Set when the data directory is chosen.
+    pub assets: Option<std::sync::Arc<dyn crate::assets::AssetSource>>,
     /// Pending camera focus request (`world_x`, `world_z`) from hierarchy double-click.
     pub focus_request: Option<(f32, f32)>,
     /// Startup phase - gates editor UI while critical data loads in the background.
@@ -307,6 +310,19 @@ impl EditorApp {
         let extraction_rx_channel = startup_init.extraction_rx;
         let cli_path = startup_init.cli_path;
 
+        // The asset source feeds the model loader and texture loaders, and the
+        // HQ flag gates the Remastered terrain option. On native both derive
+        // from the configured data directory; the extraction path re-points the
+        // source once unpacking finishes. The web build installs its VFS-backed
+        // source after the data download completes.
+        #[cfg(not(target_arch = "wasm32"))]
+        let (assets, has_hq_textures) = data_loading::native_asset_init(&config);
+        #[cfg(target_arch = "wasm32")]
+        let (assets, has_hq_textures): (
+            Option<std::sync::Arc<dyn crate::assets::AssetSource>>,
+            bool,
+        ) = (None, false);
+
         // Use the remembered tileset so the startup tileset-match check doesn't
         // immediately discard and reload the background thread's output.
         let current_tileset = config
@@ -445,6 +461,7 @@ impl EditorApp {
             ctrl_s_pressed: false,
             map_players: 2,
             ground_data: None,
+            assets,
             focus_request: None,
             startup_phase,
             test_process: None,
@@ -487,7 +504,7 @@ impl EditorApp {
             window_focused: true,
             last_paint_at: None,
             update_count: 0,
-            has_hq_textures: false,
+            has_hq_textures,
             update_check_rx,
             update_available: None,
         }

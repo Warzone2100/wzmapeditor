@@ -11,6 +11,10 @@ use std::path::{Path, PathBuf};
 use wz_pie::PieModel;
 
 use super::super::renderer;
+use crate::assets::AssetSource;
+
+/// Subdirectory under the data root holding model texture pages.
+const TEXPAGES_REL: &str = "base/texpages";
 
 /// Decoded texture page plus its source page name (used as cache key).
 pub(crate) struct TexturePageData {
@@ -32,9 +36,9 @@ impl TexturePageData {
     }
 }
 
-/// Load an image file as RGBA8 with its page name as the cache key.
-pub(crate) fn load_image_rgba(path: &Path, page_name: &str) -> Option<TexturePageData> {
-    match image::open(path) {
+/// Decode image bytes as RGBA8 with `page_name` as the cache key.
+pub(crate) fn load_image_rgba(bytes: &[u8], page_name: &str) -> Option<TexturePageData> {
+    match image::load_from_memory(bytes) {
         Ok(img) => {
             let rgba = img.to_rgba8();
             let width = rgba.width();
@@ -47,40 +51,43 @@ pub(crate) fn load_image_rgba(path: &Path, page_name: &str) -> Option<TexturePag
             })
         }
         Err(e) => {
-            log::warn!("Failed to load texture {}: {}", path.display(), e);
+            log::warn!("Failed to decode texture {page_name}: {e}");
             None
         }
     }
 }
 
 /// Load a texture PNG by its `texture_page` name. Sync, no file index.
-pub(crate) fn load_texture_simple(data_dir: &Path, texture_page: &str) -> Option<TexturePageData> {
-    let tex_path = data_dir.join("base/texpages").join(texture_page);
-
-    if !tex_path.exists() {
-        let with_png = tex_path.with_extension("png");
-        if with_png.exists() {
-            let normalized = with_png
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(texture_page);
-            return load_image_rgba(&with_png, normalized);
-        }
-        log::debug!("Texture not found: {}", tex_path.display());
-        return None;
+pub(crate) fn load_texture_simple(
+    assets: &dyn AssetSource,
+    texture_page: &str,
+) -> Option<TexturePageData> {
+    let rel = Path::new(TEXPAGES_REL).join(texture_page);
+    if let Some(bytes) = assets.bytes(&rel) {
+        return load_image_rgba(&bytes, texture_page);
     }
 
-    load_image_rgba(&tex_path, texture_page)
+    let with_png = rel.with_extension("png");
+    if let Some(bytes) = assets.bytes(&with_png) {
+        let normalized = with_png
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(str::to_string);
+        return load_image_rgba(&bytes, normalized.as_deref().unwrap_or(texture_page));
+    }
+
+    log::debug!("Texture not found: {TEXPAGES_REL}/{texture_page}");
+    None
 }
 
 /// Load a texture by name. Tries KTX2 (HQ) first, then PNG, then a
 /// prebuilt file index for textures that live outside `base/texpages/`.
 pub(crate) fn load_texture_offline(
-    data_dir: &Path,
+    assets: &dyn AssetSource,
     texture_page: &str,
     file_index: &HashMap<String, PathBuf>,
 ) -> Option<TexturePageData> {
-    let texpages_dir = data_dir.join("base/texpages");
+    let texpages_rel = Path::new(TEXPAGES_REL);
 
     // Diffuse KTX2 from high.wz is linear; convert to sRGB so the
     // Rgba8UnormSrgb GPU format round-trips. Normal/specular maps stay
@@ -89,9 +96,8 @@ pub(crate) fn load_texture_offline(
         && !texture_page.contains("_sm")
         && !texture_page.contains("_tcmask");
     let ktx2_name = texture_page.replace(".png", ".ktx2");
-    let ktx2_path = texpages_dir.join(&ktx2_name);
-    if ktx2_path.exists() {
-        match renderer::load_ktx2_as_rgba(&ktx2_path) {
+    if let Some(bytes) = assets.bytes(&texpages_rel.join(&ktx2_name)) {
+        match renderer::load_ktx2_as_rgba_bytes(&bytes) {
             Ok(mut rgba) => {
                 if is_diffuse {
                     renderer::linear_to_srgb(&mut rgba);
@@ -114,23 +120,24 @@ pub(crate) fn load_texture_offline(
         }
     }
 
-    let tex_path = texpages_dir.join(texture_page);
-    if tex_path.exists() {
-        return load_image_rgba(&tex_path, texture_page);
+    if let Some(bytes) = assets.bytes(&texpages_rel.join(texture_page)) {
+        return load_image_rgba(&bytes, texture_page);
     }
-    let with_png = tex_path.with_extension("png");
-    if with_png.exists() {
+    let with_png = texpages_rel.join(texture_page).with_extension("png");
+    if let Some(bytes) = assets.bytes(&with_png) {
         let normalized = with_png
             .file_name()
             .and_then(|n| n.to_str())
-            .unwrap_or(texture_page);
-        return load_image_rgba(&with_png, normalized);
+            .map(str::to_string);
+        return load_image_rgba(&bytes, normalized.as_deref().unwrap_or(texture_page));
     }
-    if let Some(path) = file_index.get(texture_page) {
-        return load_image_rgba(path, texture_page);
-    }
-    if let Some(path) = file_index.get(&texture_page.to_lowercase()) {
-        return load_image_rgba(path, texture_page);
+    let indexed = file_index
+        .get(texture_page)
+        .or_else(|| file_index.get(&texture_page.to_lowercase()));
+    if let Some(rel) = indexed
+        && let Some(bytes) = assets.bytes(rel)
+    {
+        return load_image_rgba(&bytes, texture_page);
     }
     log::debug!("Texture not found anywhere: '{texture_page}' (tried KTX2, PNG, file_index)");
     None
@@ -138,7 +145,7 @@ pub(crate) fn load_texture_offline(
 
 /// Resolve the tcmask texture for a model parsed in the foreground path.
 pub(crate) fn resolve_tcmask_simple(
-    data_dir: &Path,
+    assets: &dyn AssetSource,
     pie: &PieModel,
     tex_page: &str,
     tileset_index: usize,
@@ -149,7 +156,7 @@ pub(crate) fn resolve_tcmask_simple(
         .filter(|s| !s.is_empty())
         .or_else(|| pie.tcmask_pages.first().filter(|s| !s.is_empty()));
     if let Some(tcmask_name) = explicit {
-        let mut result = load_texture_simple(data_dir, tcmask_name);
+        let mut result = load_texture_simple(assets, tcmask_name);
         if let Some(ref mut data) = result {
             normalize_tcmask_channels(data);
         }
@@ -157,9 +164,9 @@ pub(crate) fn resolve_tcmask_simple(
     }
 
     if let Some(auto_name) = tcmask_name_from_texture(tex_page) {
-        let auto_path = data_dir.join("base/texpages").join(&auto_name);
-        if auto_path.exists() {
-            let mut result = load_image_rgba(&auto_path, &auto_name);
+        let auto_rel = Path::new(TEXPAGES_REL).join(&auto_name);
+        if let Some(bytes) = assets.bytes(&auto_rel) {
+            let mut result = load_image_rgba(&bytes, &auto_name);
             if let Some(ref mut data) = result {
                 normalize_tcmask_channels(data);
             }
@@ -174,7 +181,7 @@ pub(crate) fn resolve_tcmask_simple(
 pub(crate) fn resolve_tcmask_offline(
     pie: &PieModel,
     tex_page: &str,
-    data_dir: &Path,
+    assets: &dyn AssetSource,
     tileset_index: usize,
     file_index: &HashMap<String, PathBuf>,
 ) -> Option<TexturePageData> {
@@ -184,22 +191,17 @@ pub(crate) fn resolve_tcmask_offline(
         .filter(|s| !s.is_empty())
         .or_else(|| pie.tcmask_pages.first().filter(|s| !s.is_empty()));
     if let Some(tcmask_name) = explicit {
-        let mut result = load_texture_offline(data_dir, tcmask_name, file_index);
+        let mut result = load_texture_offline(assets, tcmask_name, file_index);
         if let Some(ref mut data) = result {
             normalize_tcmask_channels(data);
         } else {
-            log::debug!(
-                "TCMask explicit '{}' not found (tex_page={}, data_dir={})",
-                tcmask_name,
-                tex_page,
-                data_dir.display()
-            );
+            log::debug!("TCMask explicit '{tcmask_name}' not found (tex_page={tex_page})");
         }
         return result;
     }
 
     if let Some(auto_name) = tcmask_name_from_texture(tex_page) {
-        let mut result = load_texture_offline(data_dir, &auto_name, file_index);
+        let mut result = load_texture_offline(assets, &auto_name, file_index);
         if let Some(ref mut data) = result {
             normalize_tcmask_channels(data);
         } else {
@@ -219,17 +221,17 @@ pub(crate) fn resolve_normal_specular_offline(
     explicit_page: Option<&String>,
     tex_page: &str,
     suffix: &str,
-    data_dir: &Path,
+    assets: &dyn AssetSource,
     file_index: &HashMap<String, PathBuf>,
 ) -> Option<TexturePageData> {
     if let Some(page) = explicit_page
         && !page.is_empty()
     {
-        return load_texture_offline(data_dir, page, file_index);
+        return load_texture_offline(assets, page, file_index);
     }
 
     let auto_name = append_suffix_to_filename(tex_page, suffix);
-    load_texture_offline(data_dir, &auto_name, file_index)
+    load_texture_offline(assets, &auto_name, file_index)
 }
 
 /// Append a suffix before the file extension: "page-11.png" + "_nm" becomes "page-11_nm.png".
@@ -272,6 +274,10 @@ pub(crate) fn tcmask_name_from_texture(tex_page: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fs(dir: &Path) -> crate::assets::FsAssetSource {
+        crate::assets::FsAssetSource::new(dir.to_path_buf())
+    }
 
     fn write_test_png(path: &Path) {
         let img = image::RgbaImage::from_raw(2, 2, vec![255u8; 16]).unwrap();
@@ -336,7 +342,8 @@ mod tests {
         let path = dir.path().join("page-99-test.png");
         write_test_png(&path);
 
-        let result = load_image_rgba(&path, "page-99-test.png");
+        let bytes = std::fs::read(&path).unwrap();
+        let result = load_image_rgba(&bytes, "page-99-test.png");
         assert!(result.is_some());
         let data = result.unwrap();
         assert_eq!(data.page_name, "page-99-test.png");
@@ -353,7 +360,7 @@ mod tests {
         write_test_png(&texpages.join("page-7-barbarians.png"));
 
         let file_index = HashMap::new();
-        let result = load_texture_offline(dir.path(), "page-7-barbarians.png", &file_index);
+        let result = load_texture_offline(&fs(dir.path()), "page-7-barbarians.png", &file_index);
         assert!(result.is_some());
         let data = result.unwrap();
         assert_eq!(data.page_name, "page-7-barbarians.png");
@@ -367,7 +374,7 @@ mod tests {
         write_test_png(&texpages.join("page-7.png"));
 
         let file_index = HashMap::new();
-        let result = load_texture_offline(dir.path(), "page-7", &file_index);
+        let result = load_texture_offline(&fs(dir.path()), "page-7", &file_index);
         assert!(result.is_some());
         assert_eq!(result.unwrap().page_name, "page-7.png");
     }
@@ -382,10 +389,10 @@ mod tests {
         let mut file_index = HashMap::new();
         file_index.insert(
             "page-42-special.png".to_string(),
-            custom.join("page-42-special.png"),
+            PathBuf::from("custom/page-42-special.png"),
         );
 
-        let result = load_texture_offline(dir.path(), "page-42-special.png", &file_index);
+        let result = load_texture_offline(&fs(dir.path()), "page-42-special.png", &file_index);
         assert!(result.is_some());
         assert_eq!(result.unwrap().page_name, "page-42-special.png");
     }
@@ -396,7 +403,7 @@ mod tests {
         std::fs::create_dir_all(dir.path().join("base/texpages")).unwrap();
         let file_index = HashMap::new();
 
-        let result = load_texture_offline(dir.path(), "nonexistent.png", &file_index);
+        let result = load_texture_offline(&fs(dir.path()), "nonexistent.png", &file_index);
         assert!(result.is_none());
     }
 

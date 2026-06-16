@@ -32,19 +32,19 @@ impl TileAtlas {
     /// take the tile's average opaque color, avoiding the need for
     /// multi-pass blending. Missing tile slots fall back to tile-00's
     /// average. Returns `None` if no tiles were found.
-    pub fn build(tileset_dir: &Path) -> Option<Self> {
+    pub fn build(assets: &dyn crate::assets::AssetSource, tileset_rel: &Path) -> Option<Self> {
         let mut max_index: u32 = 0;
         let mut tile_count: u32 = 0;
         for i in 0u32..256 {
             let filename = format!("tile-{i:02}.png");
-            if tileset_dir.join(&filename).exists() {
+            if assets.exists(&tileset_rel.join(&filename)) {
                 max_index = i;
                 tile_count += 1;
             }
         }
 
         if tile_count == 0 {
-            log::warn!("No tile images found in {}", tileset_dir.display());
+            log::warn!("No tile images found in {}", tileset_rel.display());
             return None;
         }
 
@@ -54,7 +54,7 @@ impl TileAtlas {
 
         // Neutral desert tan if tile-00 fails to load.
         let fallback_rgb =
-            compute_tile_avg_opaque_color(tileset_dir, 0).unwrap_or([0x80, 0x70, 0x50]);
+            compute_tile_avg_opaque_color(assets, tileset_rel, 0).unwrap_or([0x80, 0x70, 0x50]);
 
         // Pre-fill so missing tile slots render as the fallback, not black.
         for pixel_offset in (0..data.len()).step_by(4) {
@@ -66,12 +66,11 @@ impl TileAtlas {
 
         for i in 0u32..=max_index {
             let filename = format!("tile-{i:02}.png");
-            let path = tileset_dir.join(&filename);
-            if !path.exists() {
+            let Some(bytes) = assets.bytes(&tileset_rel.join(&filename)) else {
                 continue;
-            }
+            };
 
-            let img = match image::open(&path) {
+            let img = match image::load_from_memory(&bytes) {
                 Ok(img) => img.to_rgba8(),
                 Err(e) => {
                     log::warn!("Failed to load tile {filename}: {e}");
@@ -156,15 +155,23 @@ fn avg_opaque_color(img: &image::RgbaImage) -> [u8; 3] {
 }
 
 /// Compute the average opaque color of a specific tile PNG by index.
-fn compute_tile_avg_opaque_color(tileset_dir: &Path, index: u32) -> Option<[u8; 3]> {
-    let path = tileset_dir.join(format!("tile-{index:02}.png"));
-    let img = image::open(&path).ok()?.to_rgba8();
+fn compute_tile_avg_opaque_color(
+    assets: &dyn crate::assets::AssetSource,
+    tileset_rel: &Path,
+    index: u32,
+) -> Option<[u8; 3]> {
+    let bytes = assets.bytes(&tileset_rel.join(format!("tile-{index:02}.png")))?;
+    let img = image::load_from_memory(&bytes).ok()?.to_rgba8();
     Some(avg_opaque_color(&img))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fs(dir: &Path) -> crate::assets::FsAssetSource {
+        crate::assets::FsAssetSource::new(dir.to_path_buf())
+    }
 
     #[test]
     fn build_returns_none_for_empty_directory() {
@@ -176,7 +183,7 @@ mod tests {
             let _ = std::fs::remove_file(dir.join(format!("tile-{i:02}.png")));
         }
 
-        let result = TileAtlas::build(&dir);
+        let result = TileAtlas::build(&fs(&dir), Path::new(""));
         assert!(result.is_none(), "Expected None for empty tile directory");
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -188,7 +195,7 @@ mod tests {
         // Make sure it doesn't exist
         let _ = std::fs::remove_dir_all(&dir);
 
-        let result = TileAtlas::build(&dir);
+        let result = TileAtlas::build(&fs(&dir), Path::new(""));
         assert!(result.is_none(), "Expected None for nonexistent directory");
     }
 
@@ -207,8 +214,8 @@ mod tests {
         img.save(dir.join("tile-00.png"))
             .expect("Failed to save test tile PNG");
 
-        let atlas =
-            TileAtlas::build(&dir).expect("Expected Some atlas from directory with one tile");
+        let atlas = TileAtlas::build(&fs(&dir), Path::new(""))
+            .expect("Expected Some atlas from directory with one tile");
         assert_eq!(atlas.width, 4096);
         assert_eq!(atlas.height, 4096);
         assert_eq!(atlas.tile_count, 1);

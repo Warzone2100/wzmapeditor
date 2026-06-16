@@ -281,25 +281,25 @@ impl WaterState {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        texpages_dir: &std::path::Path,
+        assets: &dyn crate::assets::AssetSource,
+        texpages_rel: &std::path::Path,
     ) {
         if self.load_attempted {
             return;
         }
         self.load_attempted = true;
         let load_png = |name: &str| -> Option<(Vec<u8>, u32, u32)> {
-            let path = texpages_dir.join(name);
-            match image::open(&path) {
-                Ok(img) => {
-                    let rgba = img.to_rgba8();
-                    let (w, h) = rgba.dimensions();
-                    Some((rgba.into_raw(), w, h))
-                }
-                Err(e) => {
-                    log::warn!("Failed to load water texture {}: {e}", path.display());
-                    None
-                }
-            }
+            let rel = texpages_rel.join(name);
+            let Some(img) = assets
+                .bytes(&rel)
+                .and_then(|b| image::load_from_memory(&b).ok())
+            else {
+                log::warn!("Failed to load water texture {}", rel.display());
+                return None;
+            };
+            let rgba = img.to_rgba8();
+            let (w, h) = rgba.dimensions();
+            Some((rgba.into_raw(), w, h))
         };
 
         let tex1 = load_png("page-80-water-1.png");

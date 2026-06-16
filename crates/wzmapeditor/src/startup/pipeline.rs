@@ -13,8 +13,10 @@ use crate::startup::{LoadMapMeta, TilesetPayload};
 /// Spawn a background thread that loads tileset images and builds the atlas.
 pub(crate) fn spawn_tileset_load(dir: std::path::PathBuf) -> TaskHandle<Option<TilesetPayload>> {
     TaskHandle::spawn("tileset_load", move || {
-        let tile_images = crate::ui::tileset_browser::load_tile_images_from_dir(&dir);
-        let atlas = crate::viewport::atlas::TileAtlas::build(&dir);
+        let assets = crate::assets::FsAssetSource::new(dir.clone());
+        let root = std::path::Path::new("");
+        let tile_images = crate::ui::tileset_browser::load_tile_images_from_dir(&assets, root);
+        let atlas = crate::viewport::atlas::TileAtlas::build(&assets, root);
         if tile_images.is_empty() {
             None
         } else {

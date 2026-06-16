@@ -160,20 +160,19 @@ fn assemble_texture_array_with_default(
 /// transparent pixels (marking it as a genuine decal tile).
 ///
 /// Falls back to the extracted directory if base.wz is unavailable.
-pub fn load_decal_texture_data_from_wz(
-    base_wz_path: Option<&std::path::Path>,
+#[cfg(not(target_arch = "wasm32"))]
+pub fn load_decal_texture_data_from_wz<R: std::io::Read + std::io::Seek>(
+    mut base_archive: Option<wz_maplib::io_wz::WzArchiveReader<R>>,
     tileset_subpath: &str,
-    tileset_128_dir: &std::path::Path,
-    tileset_256_dir: &std::path::Path,
+    assets: &dyn crate::assets::AssetSource,
+    tileset_128_rel: &std::path::Path,
+    tileset_256_rel: &std::path::Path,
     num_tiles: u32,
 ) -> (Vec<u8>, Vec<bool>) {
     let tex_size = DECAL_TEX_SIZE;
     let layer_bytes = (tex_size * tex_size * 4) as usize;
     let mut data = vec![0u8; layer_bytes * num_tiles as usize];
     let mut has_alpha = vec![false; num_tiles as usize];
-
-    // Open the zip archive once rather than re-opening it for every tile.
-    let mut archive = base_wz_path.and_then(wz_maplib::io_wz::WzArchiveReader::open);
 
     for i in 0..num_tiles {
         let filename = format!("tile-{i:02}.png");
@@ -183,46 +182,40 @@ pub fn load_decal_texture_data_from_wz(
         // high.wz KTX2 tiles are encoded in linear color space (unlike base.wz
         // ground KTX2 which is sRGB). Convert to sRGB so the Rgba8UnormSrgb GPU
         // decode produces correct colors.
-        let rgba_opt = {
-            let ktx2_path = tileset_256_dir.join(&ktx2_filename);
-            if ktx2_path.exists() {
-                match load_ktx2_as_rgba(&ktx2_path) {
-                    Ok(mut rgba) => {
-                        linear_to_srgb(&mut rgba);
-                        Some(resize_rgba(&rgba, tex_size))
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to decode decal KTX2 tile-{i:02}: {e}");
-                        None
-                    }
+        let rgba_opt = assets
+            .bytes(&tileset_256_rel.join(&ktx2_filename))
+            .and_then(|bytes| match load_ktx2_as_rgba_bytes(&bytes) {
+                Ok(mut rgba) => {
+                    linear_to_srgb(&mut rgba);
+                    Some(resize_rgba(rgba, tex_size))
                 }
-            } else {
-                None
-            }
-        }
-        // Priority 2: HQ 256px PNG tiles from high.wz (extracted to hw-256 dir).
-        .or_else(|| {
-            let png_256 = tileset_256_dir.join(&filename);
-            image::open(&png_256)
-                .ok()
-                .map(|img| resize_rgba(&img.to_rgba8(), tex_size))
-        })
-        // Priority 3: Original tiles from base.wz archive (preserves alpha).
-        .or_else(|| {
-            let entry_name = format!("{tileset_subpath}/{filename}");
-            let wz_bytes: Option<Vec<u8>> =
-                archive.as_mut().and_then(|ar| ar.read_entry(&entry_name));
-            wz_bytes
-                .and_then(|bytes| image::load_from_memory(&bytes).ok())
-                .map(|img| resize_rgba(&img.to_rgba8(), tex_size))
-        })
-        // Priority 4: Extracted 128px tiles from disk.
-        .or_else(|| {
-            let path = tileset_128_dir.join(&filename);
-            image::open(&path)
-                .ok()
-                .map(|img| resize_rgba(&img.to_rgba8(), tex_size))
-        });
+                Err(e) => {
+                    log::warn!("Failed to decode decal KTX2 tile-{i:02}: {e}");
+                    None
+                }
+            })
+            // Priority 2: HQ 256px PNG tiles from high.wz (extracted to hw-256 dir).
+            .or_else(|| {
+                assets
+                    .bytes(&tileset_256_rel.join(&filename))
+                    .and_then(|bytes| image::load_from_memory(&bytes).ok())
+                    .map(|img| resize_rgba(img.to_rgba8(), tex_size))
+            })
+            // Priority 3: Original tiles from base.wz archive (preserves alpha).
+            .or_else(|| {
+                let entry_name = format!("{tileset_subpath}/{filename}");
+                base_archive
+                    .as_mut()
+                    .and_then(|ar| ar.read_entry(&entry_name))
+                    .and_then(|bytes| image::load_from_memory(&bytes).ok())
+                    .map(|img| resize_rgba(img.to_rgba8(), tex_size))
+            })
+            .or_else(|| {
+                assets
+                    .bytes(&tileset_128_rel.join(&filename))
+                    .and_then(|bytes| image::load_from_memory(&bytes).ok())
+                    .map(|img| resize_rgba(img.to_rgba8(), tex_size))
+            });
 
         if let Some(rgba) = rgba_opt {
             // Detect alpha BEFORE storing.
@@ -291,10 +284,10 @@ fn load_ground_texture(
     // textures need `linear_to_srgb` before uploading as Rgba8UnormSrgb.
     // Normal/specular maps (_nm/_sm) stay linear (uploaded as Rgba8Unorm).
     let ktx2_name = filename.replace(".png", ".ktx2");
-    let ktx2_path = texpages_dir.join(&ktx2_name);
+    let ktx2_rel = dir_rel.join(&ktx2_name);
     let is_diffuse = !filename.contains("_nm") && !filename.contains("_sm");
-    if ktx2_path.exists() {
-        match load_ktx2_as_rgba(&ktx2_path) {
+    if let Some(bytes) = assets.bytes(&ktx2_rel) {
+        match load_ktx2_as_rgba_bytes(&bytes) {
             Ok(mut rgba) => {
                 log::info!(
                     "Decoded KTX2 {ktx2_name}: {}x{} (linear_to_srgb={is_diffuse})",
@@ -367,12 +360,21 @@ pub fn resize_rgba(img: &image::RgbaImage, target_size: u32) -> Vec<u8> {
 /// 1. Parse KTX2 header for dimensions, level offsets, supercompression
 /// 2. Zstd-decompress level 0 (highest resolution)
 /// 3. Transcode UASTC blocks to RGBA32 via basis-universal
+#[cfg(not(target_arch = "wasm32"))]
 pub fn load_ktx2_as_rgba(
     path: &std::path::Path,
 ) -> Result<image::RgbaImage, Box<dyn std::error::Error>> {
+    load_ktx2_as_rgba_bytes(&std::fs::read(path)?)
+}
+
+/// Decode KTX2 bytes (already read into memory) to RGBA8. See
+/// [`load_ktx2_as_rgba`] for the decoding pipeline.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn load_ktx2_as_rgba_bytes(
+    file_data: &[u8],
+) -> Result<image::RgbaImage, Box<dyn std::error::Error>> {
     use basis_universal::transcoding::LowLevelUastcTranscoder;
 
-    let file_data = std::fs::read(path)?;
     if file_data.len() < 104 {
         return Err("File too small for KTX2".into());
     }
@@ -463,14 +465,38 @@ pub fn load_ktx2_as_rgba(
         .ok_or_else(|| "Failed to create image from transcoded UASTC".into())
 }
 
+/// Decode KTX2 bytes to RGBA8 via the browser-side Basis Universal transcoder.
+///
+/// `KTX2File` handles the Zstandard supercompression and UASTC transcode
+/// internally, so the whole file is passed through unchanged. Returns `Err`
+/// when the transcoder is not yet loaded or the file cannot be transcoded;
+/// callers then fall back to the PNG path, exactly as on a native decode error.
+#[cfg(target_arch = "wasm32")]
+pub fn load_ktx2_as_rgba_bytes(
+    file_data: &[u8],
+) -> Result<image::RgbaImage, Box<dyn std::error::Error>> {
+    let (width, height, rgba) = crate::viewport::basis::transcode_ktx2_to_rgba(file_data)
+        .ok_or("KTX2 transcode unavailable or failed")?;
+    image::RgbaImage::from_raw(width, height, rgba)
+        .ok_or_else(|| "Failed to build image from transcoded KTX2".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// Build a filesystem asset source rooted at `dir` so the loaders read
+    /// `dir/<filename>` for an empty relative directory.
+    fn fs(dir: &std::path::Path) -> crate::assets::FsAssetSource {
+        crate::assets::FsAssetSource::new(dir.to_path_buf())
+    }
+
+    const ROOT: &str = "";
+
     #[test]
     fn resize_rgba_noop_when_already_target_size() {
         let img = image::RgbaImage::from_pixel(256, 256, image::Rgba([1, 2, 3, 255]));
-        let result = resize_rgba(&img, 256);
+        let result = resize_rgba(img, 256);
         assert_eq!(result.len(), 256 * 256 * 4);
         // First pixel should be unchanged.
         assert_eq!(&result[0..4], &[1, 2, 3, 255]);
@@ -522,7 +548,12 @@ mod tests {
         let img = image::RgbaImage::from_pixel(256, 256, image::Rgba([42, 84, 126, 255]));
         img.save(dir.join("test-ground.png")).unwrap();
 
-        let result = load_ground_texture(&dir, "test-ground.png", 256);
+        let result = load_ground_texture(
+            &fs(&dir),
+            std::path::Path::new(ROOT),
+            "test-ground.png",
+            256,
+        );
         assert!(result.is_some());
         let data = result.unwrap();
         assert_eq!(data.len(), 256 * 256 * 4);
@@ -545,7 +576,12 @@ mod tests {
         raw_data[2] = 77;
         std::fs::write(cache_dir.join("cached-only.bin"), &raw_data).unwrap();
 
-        let result = load_ground_texture(&texpages_dir, "cached-only.png", 256);
+        let result = load_ground_texture(
+            &fs(&texpages_dir),
+            std::path::Path::new(ROOT),
+            "cached-only.png",
+            256,
+        );
         assert!(result.is_some());
         let data = result.unwrap();
         assert_eq!(data[0], 99);
@@ -591,7 +627,7 @@ mod tests {
             },
         ];
 
-        let data = load_ground_texture_data(&dir, &ground_types);
+        let data = load_ground_texture_data(&fs(&dir), std::path::Path::new(ROOT), &ground_types);
         let expected_size = 3 * 1024 * 1024 * 4;
         assert_eq!(data.len(), expected_size);
 
@@ -609,7 +645,12 @@ mod tests {
         let dir = std::env::temp_dir().join("wz_test_load_ground_missing");
         let _ = std::fs::create_dir_all(&dir);
 
-        let result = load_ground_texture(&dir, "nonexistent-texture.png", 256);
+        let result = load_ground_texture(
+            &fs(&dir),
+            std::path::Path::new(ROOT),
+            "nonexistent-texture.png",
+            256,
+        );
         assert!(result.is_none());
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -630,7 +671,12 @@ mod tests {
         }];
 
         // Normal maps default to flat normal (128, 128, 255, 255).
-        let nm_data = load_ground_normal_specular_data(&dir, &ground_types, "_nm");
+        let nm_data = load_ground_normal_specular_data(
+            &fs(&dir),
+            std::path::Path::new(ROOT),
+            &ground_types,
+            "_nm",
+        );
         let layer_bytes = 1024 * 1024 * 4;
         assert_eq!(nm_data.len(), layer_bytes);
         assert_eq!(nm_data[0], 128);
@@ -639,7 +685,12 @@ mod tests {
         assert_eq!(nm_data[3], 255);
 
         // Specular maps default to black (0, 0, 0, 255).
-        let sm_data = load_ground_normal_specular_data(&dir, &ground_types, "_sm");
+        let sm_data = load_ground_normal_specular_data(
+            &fs(&dir),
+            std::path::Path::new(ROOT),
+            &ground_types,
+            "_sm",
+        );
         assert_eq!(sm_data.len(), layer_bytes);
         assert_eq!(sm_data[0], 0);
         assert_eq!(sm_data[1], 0);
@@ -667,7 +718,12 @@ mod tests {
             specular_filename: None,
         }];
 
-        let nm_data = load_ground_normal_specular_data(&dir, &ground_types, "_nm");
+        let nm_data = load_ground_normal_specular_data(
+            &fs(&dir),
+            std::path::Path::new(ROOT),
+            &ground_types,
+            "_nm",
+        );
         let layer_bytes = 1024 * 1024 * 4;
         assert_eq!(nm_data.len(), layer_bytes);
         // Should have loaded the actual texture, not the default.
@@ -701,7 +757,12 @@ mod tests {
             },
         ];
 
-        let data = load_ground_normal_specular_data(&dir, &ground_types, "_nm");
+        let data = load_ground_normal_specular_data(
+            &fs(&dir),
+            std::path::Path::new(ROOT),
+            &ground_types,
+            "_nm",
+        );
         let layer_bytes = 1024 * 1024 * 4;
         assert_eq!(data.len(), layer_bytes * 2);
         // Both layers should have the flat normal default.

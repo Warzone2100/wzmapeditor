@@ -188,9 +188,10 @@ impl super::EditorRenderer {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        texpages_dir: &std::path::Path,
+        assets: &dyn crate::assets::AssetSource,
+        texpages_rel: &std::path::Path,
     ) {
         self.water
-            .load_and_upload_textures(device, queue, texpages_dir);
+            .load_and_upload_textures(device, queue, assets, texpages_rel);
     }
 }

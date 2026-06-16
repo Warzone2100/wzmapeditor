@@ -50,21 +50,18 @@ const BRAIN_FILE: &str = "brain.json";
 const TERRAIN_TABLE_FILE: &str = "terraintable.json";
 
 impl StatsDatabase {
-    /// Load all stats from the given stats directory.
-    pub fn load_from_dir(stats_dir: impl AsRef<Path>) -> Result<Self, StatsError> {
-        let stats_dir = stats_dir.as_ref();
+    /// Load all stats, reading each JSON file's contents through `read`.
+    ///
+    /// `read(name)` returns the named file's UTF-8 contents, `Ok(None)` when it
+    /// is absent, or an error when it exists but cannot be read. This is the
+    /// source-agnostic core of [`load_from_dir`](Self::load_from_dir): the web
+    /// build supplies a closure backed by an in-memory archive instead of disk.
+    pub fn load_from_source<F>(read: F) -> Result<Self, StatsError>
+    where
+        F: Fn(&str) -> Result<Option<String>, StatsError>,
+    {
         let mut db = StatsDatabase::default();
-
-        let load_json = |name: &str| -> Result<Option<String>, StatsError> {
-            let path = stats_dir.join(name);
-            if path.exists() {
-                let content = std::fs::read_to_string(&path)
-                    .map_err(|e| StatsError::Io { path, source: e })?;
-                Ok(Some(content))
-            } else {
-                Ok(None)
-            }
-        };
+        let load_json = read;
 
         if let Some(content) = load_json(STRUCTURES_FILE)? {
             db.structures = crate::structures::load_structures(&content)?;
@@ -128,24 +125,21 @@ impl StatsDatabase {
         Ok(db)
     }
 
-    /// Merge an additional stats directory on top, overriding entries with
-    /// matching keys. Used to layer `mp/stats/` on top of `base/stats/` so
-    /// multiplayer-only components (e.g. Dragon, Wyvern bodies) are
-    /// available. Template and structure ids seen here are recorded in
-    /// `mp_template_ids` / `mp_structure_ids` so callers can distinguish
-    /// skirmish-allowed entries from campaign-only ones.
-    pub fn merge_from_dir(&mut self, stats_dir: impl AsRef<Path>) -> Result<(), StatsError> {
+    /// Load all stats from the given stats directory.
+    pub fn load_from_dir(stats_dir: impl AsRef<Path>) -> Result<Self, StatsError> {
         let stats_dir = stats_dir.as_ref();
-        let load_json = |name: &str| -> Result<Option<String>, StatsError> {
-            let path = stats_dir.join(name);
-            if path.exists() {
-                let content = std::fs::read_to_string(&path)
-                    .map_err(|e| StatsError::Io { path, source: e })?;
-                Ok(Some(content))
-            } else {
-                Ok(None)
-            }
-        };
+        Self::load_from_source(|name| read_stats_file(stats_dir, name))
+    }
+
+    /// Merge stats read through `read` on top of the current database.
+    ///
+    /// Source-agnostic core of [`merge_from_dir`](Self::merge_from_dir); see it
+    /// for the overriding and id-tracking semantics.
+    pub fn merge_from_source<F>(&mut self, read: F) -> Result<(), StatsError>
+    where
+        F: Fn(&str) -> Result<Option<String>, StatsError>,
+    {
+        let load_json = read;
 
         let mut merged = 0usize;
         if let Some(content) = load_json(STRUCTURES_FILE)? {
@@ -206,13 +200,20 @@ impl StatsDatabase {
             self.brain.extend(extra);
         }
         if merged > 0 {
-            log::info!(
-                "Merged {} stat entries from {}",
-                merged,
-                stats_dir.display()
-            );
+            log::info!("Merged {merged} stat entries");
         }
         Ok(())
+    }
+
+    /// Merge an additional stats directory on top, overriding entries with
+    /// matching keys. Used to layer `mp/stats/` on top of `base/stats/` so
+    /// multiplayer-only components (e.g. Dragon, Wyvern bodies) are
+    /// available. Template and structure ids seen here are recorded in
+    /// `mp_template_ids` / `mp_structure_ids` so callers can distinguish
+    /// skirmish-allowed entries from campaign-only ones.
+    pub fn merge_from_dir(&mut self, stats_dir: impl AsRef<Path>) -> Result<(), StatsError> {
+        let stats_dir = stats_dir.as_ref();
+        self.merge_from_source(|name| read_stats_file(stats_dir, name))
     }
 
     /// True when `mp/stats/` has been merged. When false, callers cannot
@@ -241,5 +242,17 @@ impl StatsDatabase {
             .get(structure_id)
             .and_then(|s| s.weapons.first())
             .and_then(|w| self.weapons.get(w))
+    }
+}
+
+/// Read `name` from `dir` as text, `Ok(None)` when the file is absent.
+fn read_stats_file(dir: &Path, name: &str) -> Result<Option<String>, StatsError> {
+    let path = dir.join(name);
+    if path.exists() {
+        let content =
+            std::fs::read_to_string(&path).map_err(|e| StatsError::Io { path, source: e })?;
+        Ok(Some(content))
+    } else {
+        Ok(None)
     }
 }

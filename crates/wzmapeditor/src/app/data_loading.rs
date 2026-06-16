@@ -412,7 +412,12 @@ pub(super) fn start_base_wz_extraction(
     app.log("Extracting base.wz in the background...".to_string());
 }
 
-/// Try to load game stats from the configured data directory.
+/// Try to load game stats from the configured data source.
+///
+/// Native reads the stats JSON files from disk; the web build reads them from
+/// the in-memory `.wz` VFS through [`AssetSource`](crate::assets::AssetSource).
+/// Both feed the same model loader, which already resolves PIE models through
+/// the asset source.
 pub(super) fn try_load_stats(app: &mut EditorApp, ctx: &egui::Context) {
     if app.stats.is_some() || app.rt.stats_load_attempted {
         return;

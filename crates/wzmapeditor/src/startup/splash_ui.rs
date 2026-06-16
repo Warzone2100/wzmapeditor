@@ -450,12 +450,14 @@ pub fn show_web_loading_overlay(ui: &mut egui::Ui, app: &mut EditorApp) {
         .web_ground_decode
         .as_ref()
         .map(crate::app::web_ground::WebGroundDecode::fraction);
-    let icon = app.editor_icon.clone();
 
+    // The same launcher card as the initial splash, minus the icon, over the
+    // modal's default dimmed backdrop -- a brief re-decode should fade the
+    // editor, not black it out.
     let ctx = ui.ctx().clone();
     egui::Modal::new(egui::Id::new("web_reload_modal")).show(&ctx, |ui| {
         ui.set_width(SPLASH_WIDTH);
-        splash_title_block(ui, icon.as_ref());
+        splash_title_block(ui, None);
         splash_task_progress(ui, label, frac);
         ui.add_space(12.0);
     });

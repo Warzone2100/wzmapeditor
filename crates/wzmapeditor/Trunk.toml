@@ -1,0 +1,4 @@
+[build]
+# Deterministic output filenames so index.html references resolve without a
+# hash lookup; GitHub Pages serves the artifact as-is.
+filehash = false

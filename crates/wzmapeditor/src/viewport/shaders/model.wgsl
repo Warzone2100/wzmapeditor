@@ -126,9 +126,10 @@ fn compute_shadow(world_pos: vec3<f32>) -> f32 {
     );
     let shadow_depth = shadow_ndc.z;
 
-    if shadow_uv.x < 0.0 || shadow_uv.x > 1.0 || shadow_uv.y < 0.0 || shadow_uv.y > 1.0 {
-        return 1.0;
-    }
+    // WebGPU bans textureSampleCompare in non-uniform control flow, so the
+    // out-of-bounds case folds into select() rather than an early return.
+    let in_bounds = shadow_uv.x >= 0.0 && shadow_uv.x <= 1.0
+        && shadow_uv.y >= 0.0 && shadow_uv.y <= 1.0;
 
     let texel_size = 1.0 / f32(textureDimensions(shadow_map).x);
     var visibility = 0.0;
@@ -144,7 +145,7 @@ fn compute_shadow(world_pos: vec3<f32>) -> f32 {
             );
         }
     }
-    return visibility / 9.0;
+    return select(1.0, visibility / 9.0, in_bounds);
 }
 
 @fragment
@@ -191,18 +192,19 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // darken; HQ path folds visibility into its diffuse term instead.
     let shadow = compute_shadow(in.world_pos);
 
+    // tcmask_instanced.frag adds the terrain lightmap to ambient so structures
+    // inherit ground sun. map_world_size.x == 1.0 is the thumbnail sentinel (no
+    // lightmap). Sampled before the non-uniform has_specularmap branch because
+    // WebGPU forbids implicit-LOD sampling in non-uniform control flow.
+    var ambient_factor = AMBIENT;
+    if uniforms.map_world_size.x > 1.0 {
+        let lm_uv = in.world_pos.xz / uniforms.map_world_size.xy;
+        let lm_value = textureSample(lightmap_texture, lightmap_sampler, lm_uv).r;
+        ambient_factor = min(AMBIENT + lm_value / 3.0, 1.0);
+    }
+
     if has_specularmap {
         let lambertTerm = max(dot(N, sun_dir), 0.0);
-
-        // tcmask_instanced.frag adds the terrain lightmap to ambient so
-        // structures inherit ground sun. map_world_size.x == 1.0 is the
-        // thumbnail sentinel (no lightmap to sample).
-        var ambient_factor = AMBIENT;
-        if uniforms.map_world_size.x > 1.0 {
-            let lm_uv = in.world_pos.xz / uniforms.map_world_size.xy;
-            let lm_value = textureSample(lightmap_texture, lightmap_sampler, lm_uv).r;
-            ambient_factor = min(AMBIENT + lm_value / 3.0, 1.0);
-        }
 
         let ambient_light = vec3<f32>(ambient_factor) * tex_color.rgb;
         let diffuse_light = tex_color.rgb * lambertTerm * shadow;
@@ -224,14 +226,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         // Raw shadow drops self-shadowed facets to sceneColor, giving the
         // in-game 3D look on octagonal bases. Lightmap/3 keeps well-lit tiles
         // at AMBIENT + 1/3 rather than saturating.
-        var classic_ambient = AMBIENT;
-        if uniforms.map_world_size.x > 1.0 {
-            let lm_uv = in.world_pos.xz / uniforms.map_world_size.xy;
-            let lm_value = textureSample(lightmap_texture, lightmap_sampler, lm_uv).r;
-            classic_ambient = min(AMBIENT + lm_value / 3.0, 1.0);
-        }
         let scene_color = tex_color.rgb * 0.15;
-        light = scene_color + tex_color.rgb * (classic_ambient * 2.0) * shadow;
+        light = scene_color + tex_color.rgb * (ambient_factor * 2.0) * shadow;
     }
 
     // Lerp toward team color where mask is set; grain-merge muddies dark diffuses.

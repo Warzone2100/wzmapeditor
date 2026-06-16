@@ -124,6 +124,13 @@ fn handle_setup_browse(app: &mut EditorApp, ctx: &egui::Context) {
         return;
     };
 
+    handle_picked_data_dir(app, ctx, dir);
+}
+
+/// Validate a picked data directory and transition into Loading or stash an
+/// error on the Setup phase.
+#[cfg(not(target_arch = "wasm32"))]
+fn handle_picked_data_dir(app: &mut EditorApp, ctx: &egui::Context, dir: std::path::PathBuf) {
     let has_base_dir =
         dir.join("base").join("stats").exists() || dir.join("base").join("texpages").exists();
     let base_wz = dir.join("base.wz");

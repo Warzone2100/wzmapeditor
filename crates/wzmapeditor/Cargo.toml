@@ -22,19 +22,57 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 image = { workspace = true }
 log = { workspace = true }
-env_logger = { workspace = true }
 anyhow = { workspace = true }
 rfd = { workspace = true }
+rustc-hash = { workspace = true }
+semver = { workspace = true }
+web-time = { workspace = true }
+# `js` gives the seedless global RNG entropy on wasm; no-op on native.
+fastrand = { version = "2", features = ["js"] }
+noise = "0.9"
+
+# Native-only: these either wrap C/C++ (basis-universal, zstd, mimalloc), use
+# blocking sockets (ureq), or shell out to the OS (open) and cannot build or
+# run on wasm32-unknown-unknown. rfd stays cross-platform (it has a web backend).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+env_logger = { workspace = true }
 ureq = { workspace = true }
+open = { workspace = true }
 basis-universal = { workspace = true }
 basis-universal-sys = { workspace = true }
 zstd = { workspace = true }
-rustc-hash = { workspace = true }
-open = { workspace = true }
-semver = { workspace = true }
-fastrand = "2"
-noise = "0.9"
 mimalloc = "0.1"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "Document",
+    "Window",
+    "Element",
+    "EventTarget",
+    "HtmlCanvasElement",
+    "HtmlInputElement",
+    "HtmlElement",
+    "HtmlAnchorElement",
+    "Node",
+    "Url",
+    "FileList",
+    "File",
+    "Blob",
+    "Storage",
+    "Navigator",
+    "StorageManager",
+    "Request",
+    "Response",
+    "Headers",
+    "ReadableStream",
+    "ReadableStreamDefaultReader",
+    "Cache",
+    "CacheStorage",
+] }
+console_error_panic_hook = "0.1"
 
 [target.aarch64-pc-windows-msvc.dependencies]
 # Use mimalloc v2 on arm64 windows builds to avoid a runtime crash caused by mimalloc 3.3.0/3.3.1

@@ -79,17 +79,23 @@ pub(crate) fn open_config_dir(app: &mut EditorApp) {
         return;
     }
 
-    #[cfg(target_os = "windows")]
-    let opener = "explorer.exe";
-    #[cfg(target_os = "macos")]
-    let opener = "open";
-    #[cfg(all(unix, not(target_os = "macos")))]
-    let opener = "xdg-open";
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        #[cfg(target_os = "windows")]
+        let opener = "explorer.exe";
+        #[cfg(target_os = "macos")]
+        let opener = "open";
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let opener = "xdg-open";
 
-    match std::process::Command::new(opener).arg(&dir).spawn() {
-        Ok(_) => app.log(format!("Opened config dir: {}", dir.display())),
-        Err(e) => app.log_error(format!("Failed to open {}: {e}", dir.display())),
+        match std::process::Command::new(opener).arg(&dir).spawn() {
+            Ok(_) => app.log(format!("Opened config dir: {}", dir.display())),
+            Err(e) => app.log_error(format!("Failed to open {}: {e}", dir.display())),
+        }
     }
+
+    #[cfg(target_arch = "wasm32")]
+    log::warn!("Open config dir is not available in the web build");
 }
 
 pub(crate) fn undo(app: &mut EditorApp) {
@@ -114,15 +120,22 @@ pub(crate) fn redo(app: &mut EditorApp) {
     }
 }
 
-pub(crate) fn import_wz(app: &mut EditorApp) {
-    open_wz_dialog(app);
+pub(crate) fn import_wz(app: &mut EditorApp, ctx: &egui::Context) {
+    open_wz_dialog(app, ctx);
 }
 
 pub(crate) fn import_map_folder(app: &mut EditorApp) {
-    if let Some(path) = rfd::FileDialog::new()
+    #[cfg(target_arch = "wasm32")]
+    let picked: Option<std::path::PathBuf> = {
+        log::warn!("Import Map Folder is not available in the web build");
+        None
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    let picked = rfd::FileDialog::new()
         .set_title("Import Map Folder")
-        .pick_folder()
-    {
+        .pick_folder();
+
+    if let Some(path) = picked {
         match wz_maplib::io_wz::load_from_directory(&path) {
             Ok(map) => {
                 let save = Some(path.clone());
@@ -134,11 +147,18 @@ pub(crate) fn import_map_folder(app: &mut EditorApp) {
 }
 
 pub(crate) fn import_game_map(app: &mut EditorApp) {
-    let Some(path) = rfd::FileDialog::new()
+    #[cfg(target_arch = "wasm32")]
+    let picked: Option<std::path::PathBuf> = {
+        log::warn!("Import Binary game.map is not available in the web build");
+        None
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    let picked = rfd::FileDialog::new()
         .set_title("Import Binary game.map")
         .add_filter("game.map", &["map"])
-        .pick_file()
-    else {
+        .pick_file();
+
+    let Some(path) = picked else {
         return;
     };
 
@@ -182,10 +202,17 @@ pub(crate) fn save_as_directory(app: &mut EditorApp) {
     if app.document.is_none() {
         return;
     }
-    if let Some(path) = rfd::FileDialog::new()
+    #[cfg(target_arch = "wasm32")]
+    let picked: Option<std::path::PathBuf> = {
+        log::warn!("Save As Map Folder is not available in the web build");
+        None
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    let picked = rfd::FileDialog::new()
         .set_title("Save As Map Folder")
-        .pick_folder()
-    {
+        .pick_folder();
+
+    if let Some(path) = picked {
         app.save_to_directory(&path);
     }
 }
@@ -194,12 +221,19 @@ pub(crate) fn save_as_game_map(app: &mut EditorApp) {
     let Some(ref doc) = app.document else {
         return;
     };
-    let Some(path) = rfd::FileDialog::new()
+    #[cfg(target_arch = "wasm32")]
+    let picked: Option<std::path::PathBuf> = {
+        log::warn!("Save As Binary game.map is not available in the web build");
+        None
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    let picked = rfd::FileDialog::new()
         .set_title("Save As Binary game.map")
         .set_file_name("game.map")
         .add_filter("game.map", &["map"])
-        .save_file()
-    else {
+        .save_file();
+
+    let Some(path) = picked else {
         return;
     };
     let bytes = match wz_maplib::io_binary::write_game_map(
@@ -284,12 +318,20 @@ pub(crate) fn save_as_preview_png(app: &mut EditorApp) {
         .map_or_else(|| "preview".to_string(), str::to_string);
     let default_name = format!("{stem}_preview.png");
 
-    let Some(path) = rfd::FileDialog::new()
+    #[cfg(target_arch = "wasm32")]
+    let picked: Option<std::path::PathBuf> = {
+        let _ = default_name;
+        log::warn!("Export Preview PNG is not available in the web build");
+        None
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    let picked = rfd::FileDialog::new()
         .set_title("Export Preview PNG")
         .set_file_name(default_name)
         .add_filter("PNG", &["png"])
-        .save_file()
-    else {
+        .save_file();
+
+    let Some(path) = picked else {
         return;
     };
 

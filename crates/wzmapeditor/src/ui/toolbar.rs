@@ -109,10 +109,8 @@ fn show_update_button(ui: &mut Ui, app: &mut EditorApp) {
     let resp = ui
         .add(btn)
         .on_hover_text("Open the release page in your browser");
-    if resp.clicked()
-        && let Err(e) = open::that(&info.html_url)
-    {
-        log::warn!("Failed to open release URL {}: {e}", info.html_url);
+    if resp.clicked() {
+        ui.ctx().open_url(egui::OpenUrl::new_tab(&info.html_url));
     }
     resp.context_menu(|ui| {
         if ui.button("Don't show for this version").clicked() {

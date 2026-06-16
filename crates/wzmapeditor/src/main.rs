@@ -1,13 +1,16 @@
 //! wzmapeditor - Warzone 2100 map editor.
 
+// mimalloc as the global allocator (M-MIMALLOC-APPS, up to ~25% faster on
+// allocation-heavy hot paths). Native only; wasm uses its default allocator.
+#[cfg(not(target_arch = "wasm32"))]
 use mimalloc::MiMalloc;
 
-// mimalloc as the global allocator (M-MIMALLOC-APPS, up to ~25% faster on
-// allocation-heavy hot paths).
+#[cfg(not(target_arch = "wasm32"))]
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
 mod app;
+mod assets;
 mod autosave;
 mod balance;
 mod config;
@@ -16,8 +19,10 @@ mod generator;
 mod icon;
 mod keybindings;
 mod launch_sentinel;
+#[cfg(not(target_arch = "wasm32"))]
 mod logger;
 mod map;
+#[cfg(not(target_arch = "wasm32"))]
 mod panic_logger;
 mod publish;
 mod startup;
@@ -132,6 +137,7 @@ fn main() -> eframe::Result {
     )
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn backend_flags_for(cfg: &config::EditorConfig) -> wgpu::Backends {
     match cfg.graphics_backend {
         config::GraphicsBackend::Dx12 => wgpu::Backends::DX12,
@@ -143,6 +149,7 @@ fn backend_flags_for(cfg: &config::EditorConfig) -> wgpu::Backends {
 
 /// Walk one step around the platform's backend preference list,
 /// snapping to the default if `prev` isn't in the list (cross-OS config copy).
+#[cfg(not(target_arch = "wasm32"))]
 fn next_backend_after_crash(prev: config::GraphicsBackend) -> config::GraphicsBackend {
     let chain = config::GraphicsBackend::available_for_platform();
     match chain.iter().position(|b| *b == prev) {
@@ -160,6 +167,7 @@ fn next_backend_after_crash(prev: config::GraphicsBackend) -> config::GraphicsBa
 /// `desired_maximum_frame_latency: Some(1)` at the eframe level keeps the
 /// FIFO queue tight enough that input latency matches Mailbox without the
 /// runaway frame rate.
+#[cfg(not(target_arch = "wasm32"))]
 fn present_mode_for(cfg: &config::EditorConfig) -> wgpu::PresentMode {
     match cfg.present_mode {
         config::PresentMode::SmartVsync | config::PresentMode::AutoVsync => {
@@ -170,4 +178,59 @@ fn present_mode_for(cfg: &config::EditorConfig) -> wgpu::PresentMode {
         config::PresentMode::Mailbox => wgpu::PresentMode::Mailbox,
         config::PresentMode::Immediate => wgpu::PresentMode::Immediate,
     }
+}
+
+// Web entry point. Trunk builds this binary to wasm and wasm-bindgen treats
+// `main` as the start function; the egui scene is hosted in a `<canvas>`.
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    use eframe::wasm_bindgen::JsCast as _;
+
+    console_error_panic_hook::set_once();
+    eframe::WebLogger::init(log::LevelFilter::Info).ok();
+    log::info!("Starting wzmapeditor (web)");
+
+    // The 3D viewport pipelines declare a Depth32Float attachment, so the web
+    // painter's egui pass needs a matching depth buffer (native sets the same
+    // via NativeOptions::depth_buffer).
+    let web_options = eframe::WebOptions {
+        depth_buffer: 32,
+        ..eframe::WebOptions::default()
+    };
+
+    wasm_bindgen_futures::spawn_local(async {
+        let document = web_sys::window()
+            .expect("no window")
+            .document()
+            .expect("no document");
+
+        let canvas = document
+            .get_element_by_id("the_canvas_id")
+            .expect("missing #the_canvas_id element")
+            .dyn_into::<web_sys::HtmlCanvasElement>()
+            .expect("#the_canvas_id was not a HtmlCanvasElement");
+
+        let start_result = eframe::WebRunner::new()
+            .start(
+                canvas,
+                web_options,
+                Box::new(|cc| {
+                    let (output_log, _panel_tx) = app::output_log::OutputLog::new();
+                    Ok(Box::new(app::EditorApp::new(cc, output_log)))
+                }),
+            )
+            .await;
+
+        if let Some(loading_text) = document.get_element_by_id("loading_text") {
+            match start_result {
+                Ok(()) => loading_text.remove(),
+                Err(e) => {
+                    loading_text.set_inner_html(
+                        "<p>The app has crashed. See the developer console for details.</p>",
+                    );
+                    panic!("failed to start eframe: {e:?}");
+                }
+            }
+        }
+    });
 }

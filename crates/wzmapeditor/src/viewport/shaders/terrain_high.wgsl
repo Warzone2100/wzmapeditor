@@ -117,9 +117,9 @@ fn vs_main(in: VertexIn) -> VertexOut {
 fn sample_shadow(shadow_pos: vec4<f32>) -> f32 {
     let proj = shadow_pos.xyz / shadow_pos.w;
     let uv = proj.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5);
-    if uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || proj.z > 1.0 {
-        return 1.0;
-    }
+    // WebGPU bans textureSampleCompare in non-uniform control flow, so the
+    // out-of-bounds case folds into select() rather than an early return.
+    let in_bounds = uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0 && proj.z <= 1.0;
     let bias = 0.003;
     let depth = proj.z - bias;
     let tex_size = vec2<f32>(textureDimensions(shadow_map));
@@ -131,7 +131,7 @@ fn sample_shadow(shadow_pos: vec4<f32>) -> f32 {
             shadow += textureSampleCompare(shadow_map, shadow_sampler, uv + offset, depth);
         }
     }
-    return shadow / 9.0;
+    return select(1.0, shadow / 9.0, in_bounds);
 }
 
 fn ground_uv(ground_no: u32, world_xz: vec2<f32>) -> vec2<f32> {
@@ -184,15 +184,19 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     gloss += sample_ground_specular(ground_indices.w, world_xz) * w.w;
 
     // Matches main_bumpMapping() in terrain_combined_high.frag.
-    if in.tile_no >= 0 {
-        let decal_idx = in.tile_no;
-        let uv = in.tex_coord;
-
-        let decal_color = textureSample(decal_texture, decal_sampler, uv, decal_idx);
+    // Decal array samples are hoisted out of the `tile_no >= 0` branch (WebGPU
+    // bans implicit-LOD sampling in non-uniform control flow; tile_no is a
+    // per-fragment varying). The index is clamped so the sample is always valid.
+    let has_decal = in.tile_no >= 0;
+    let decal_idx = max(in.tile_no, 0);
+    let uv = in.tex_coord;
+    let decal_color = textureSample(decal_texture, decal_sampler, uv, decal_idx);
+    let dn_raw = textureSample(decal_normal_texture, decal_sampler, uv, decal_idx).rgb;
+    let decal_spec = textureSample(decal_specular_texture, decal_sampler, uv, decal_idx).r;
+    if has_decal {
         let a = decal_color.a;
         color = mix(color, decal_color.rgb, a);
 
-        let dn_raw = textureSample(decal_normal_texture, decal_sampler, uv, decal_idx).rgb;
         let dn = normalize(dn_raw * 2.0 - 1.0);
         let dn_is_zero = step(dot(dn_raw, dn_raw), 0.001);
         // WZ2100: n_normalized.xy * decal2groundMat2.
@@ -207,7 +211,6 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
         );
         ts_normal = mix(ts_normal, decal_n, a);
 
-        let decal_spec = textureSample(decal_specular_texture, decal_sampler, uv, decal_idx).r;
         gloss = mix(gloss, decal_spec, a);
     }
 

@@ -6,7 +6,7 @@
 
 use std::collections::VecDeque;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
-use std::time::{SystemTime, UNIX_EPOCH};
+use web_time::{SystemTime, UNIX_EPOCH};
 
 /// Bounds memory in long editing sessions; ~1 MB worst case at 5000 entries.
 const MAX_ENTRIES: usize = 5000;

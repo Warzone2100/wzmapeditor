@@ -1,7 +1,7 @@
 //! Unified height brush. One apply path covers raise, lower, smooth, and set.
 
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use web_time::{Duration, Instant};
 
 use wz_maplib::WzMap;
 use wz_maplib::constants::{TILE_MAX_HEIGHT, TILE_UNITS};

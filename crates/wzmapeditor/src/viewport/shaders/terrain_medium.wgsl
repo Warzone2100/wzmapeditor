@@ -103,9 +103,10 @@ fn compute_shadow(world_pos: vec3<f32>) -> f32 {
     );
     let shadow_depth = shadow_ndc.z;
 
-    if shadow_uv.x < 0.0 || shadow_uv.x > 1.0 || shadow_uv.y < 0.0 || shadow_uv.y > 1.0 {
-        return 1.0;
-    }
+    // WebGPU bans textureSampleCompare in non-uniform control flow, so the
+    // out-of-bounds case folds into select() rather than an early return.
+    let in_bounds = shadow_uv.x >= 0.0 && shadow_uv.x <= 1.0
+        && shadow_uv.y >= 0.0 && shadow_uv.y <= 1.0;
 
     let texel_size = 1.0 / f32(textureDimensions(shadow_map).x);
     var visibility = 0.0;
@@ -121,7 +122,7 @@ fn compute_shadow(world_pos: vec3<f32>) -> f32 {
             );
         }
     }
-    return visibility / 9.0;
+    return select(1.0, visibility / 9.0, in_bounds);
 }
 
 @fragment
@@ -132,21 +133,24 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let g3 = sample_ground(in.ground_indices.w, in.world_xz) * in.ground_weights.w;
     var ground_color = g0 + g1 + g2 + g3;
 
+    // The decal atlas sample is hoisted out of the `tile_no >= 0` branch:
+    // WebGPU forbids implicit-LOD sampling in non-uniform control flow, and
+    // tile_no is a per-fragment (flat) varying. The atlas UV is always valid.
+    let atlas_cols = 16u;
+    let tile_col = in.tile_index % atlas_cols;
+    let tile_row = in.tile_index / atlas_cols;
+    let tile_size = 1.0 / f32(atlas_cols);
+
+    let half_pixel = 0.5 / 256.0;
+    let uv_clamped = clamp(in.tex_coord, vec2<f32>(half_pixel), vec2<f32>(1.0 - half_pixel));
+    let atlas_uv = vec2<f32>(
+        (f32(tile_col) + uv_clamped.x) * tile_size,
+        (f32(tile_row) + uv_clamped.y) * tile_size,
+    );
+    let decal = textureSample(atlas_texture, atlas_sampler, atlas_uv);
+
     var base_color = ground_color;
     if in.tile_no >= 0 {
-        let atlas_cols = 16u;
-        let tile_col = in.tile_index % atlas_cols;
-        let tile_row = in.tile_index / atlas_cols;
-        let tile_size = 1.0 / f32(atlas_cols);
-
-        let half_pixel = 0.5 / 256.0;
-        let uv_clamped = clamp(in.tex_coord, vec2<f32>(half_pixel), vec2<f32>(1.0 - half_pixel));
-        let atlas_uv = vec2<f32>(
-            (f32(tile_col) + uv_clamped.x) * tile_size,
-            (f32(tile_row) + uv_clamped.y) * tile_size,
-        );
-
-        let decal = textureSample(atlas_texture, atlas_sampler, atlas_uv);
         base_color = mix(ground_color, decal.rgb, decal.a);
     }
 

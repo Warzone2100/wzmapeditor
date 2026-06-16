@@ -8,7 +8,9 @@ use std::sync::mpsc;
 
 use egui::{Color32, TextureHandle, TextureOptions, Vec2};
 
+#[cfg(not(target_arch = "wasm32"))]
 const API_BASE: &str = "https://maps.wz2100.net";
+#[cfg(not(target_arch = "wasm32"))]
 const API_FULL: &str = "https://maps.wz2100.net/api/v1/full.json";
 
 /// Replace `{hash}` with the map's download hash.
@@ -257,6 +259,18 @@ impl OnlineMapsState {
 }
 
 /// Fetch the full map list from the API. Blocking; run on a worker thread.
+#[cfg(target_arch = "wasm32")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "signature must match the native fetch_map_list"
+)]
+fn fetch_map_list(_user_dirs: &[PathBuf]) -> Result<Vec<OnlineMapEntry>, String> {
+    log::warn!("Fetching the online map list is not available in the web build");
+    Ok(Vec::new())
+}
+
+/// Fetch the full map list from the API. Blocking; run on a worker thread.
+#[cfg(not(target_arch = "wasm32"))]
 fn fetch_map_list(user_dirs: &[PathBuf]) -> Result<Vec<OnlineMapEntry>, String> {
     let mut all_maps = Vec::new();
     let mut url = API_FULL.to_string();
@@ -300,6 +314,7 @@ fn fetch_map_list(user_dirs: &[PathBuf]) -> Result<Vec<OnlineMapEntry>, String> 
     Ok(all_maps)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn parse_map_entry(map: &serde_json::Value, user_dirs: &[PathBuf]) -> Option<OnlineMapEntry> {
     let name = map["name"].as_str()?.to_string();
     let players = map["slots"].as_u64().unwrap_or(0) as u8;
@@ -341,6 +356,13 @@ fn parse_map_entry(map: &serde_json::Value, user_dirs: &[PathBuf]) -> Option<Onl
 }
 
 /// Blocking GET.
+#[cfg(target_arch = "wasm32")]
+fn fetch_bytes(_url: &str) -> Result<Vec<u8>, String> {
+    Err("network fetch is not available in the web build".to_string())
+}
+
+/// Blocking GET.
+#[cfg(not(target_arch = "wasm32"))]
 fn fetch_bytes(url: &str) -> Result<Vec<u8>, String> {
     ureq::get(url)
         .call()
@@ -351,6 +373,14 @@ fn fetch_bytes(url: &str) -> Result<Vec<u8>, String> {
 }
 
 /// Blocking download into the user maps directory.
+#[cfg(target_arch = "wasm32")]
+fn download_map(_url: &str, _user_dirs: &[PathBuf], _filename: &str) -> Result<PathBuf, String> {
+    log::warn!("Downloading online maps is not available in the web build");
+    Err("downloading maps is not available in the web build".to_string())
+}
+
+/// Blocking download into the user maps directory.
+#[cfg(not(target_arch = "wasm32"))]
 fn download_map(url: &str, user_dirs: &[PathBuf], filename: &str) -> Result<PathBuf, String> {
     let dest_dir = user_dirs.first().ok_or("No user maps directory found")?;
 

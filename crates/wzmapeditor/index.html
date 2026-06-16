@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>wzmapeditor</title>
+
+    <!-- Favicon: the same editor icon shown on the splash. -->
+    <link data-trunk rel="icon" href="icons/256x256.png" />
+
+    <!-- Trunk rewrites this to the deploy base path (e.g. /wzmapeditor/) so a
+         project GitHub Pages site resolves assets correctly. -->
+    <base data-trunk-public-url />
+
+    <link data-trunk rel="rust" data-wasm-opt="z"
+        data-wasm-opt-params="--enable-bulk-memory --enable-sign-ext --enable-mutable-globals --enable-nontrapping-float-to-int --enable-multivalue --enable-reference-types" />
+
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#909090" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#404040" />
+
+    <style>
+        html,
+        body {
+            overflow: hidden;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: 100%;
+            width: 100%;
+            background-color: #1b1b1b;
+            color: #f0f0f0;
+        }
+
+        @media (prefers-color-scheme: light) {
+
+            html,
+            body {
+                background-color: #f0f0f0;
+                color: #1b1b1b;
+            }
+        }
+
+        canvas {
+            margin-right: auto;
+            margin-left: auto;
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .centered {
+            margin-right: auto;
+            margin-left: auto;
+            display: block;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+            font-family: Ubuntu-Light, Helvetica, sans-serif;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="the_canvas_id"></canvas>
+
+    <div class="centered" id="loading_text">
+        <p style="font-size:16px">Loading wzmapeditor…</p>
+    </div>
+</body>
+
+</html>

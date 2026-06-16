@@ -176,7 +176,12 @@ fn rescan_user_maps(browser: &mut MapBrowserDialog, ctx: &egui::Context) {
 /// - Linux: `~/.local/share/Warzone 2100/maps`
 /// - macOS: `~/Library/Application Support/Warzone 2100/maps`
 pub fn wz2100_user_map_dirs() -> Vec<PathBuf> {
+    // The web build has no local user data directory; only the native
+    // per-OS branches below ever populate `dirs`, so gate the `mut`.
+    #[cfg(not(target_arch = "wasm32"))]
     let mut dirs = Vec::new();
+    #[cfg(target_arch = "wasm32")]
+    let dirs = Vec::new();
 
     #[cfg(target_os = "windows")]
     if let Ok(appdata) = std::env::var("APPDATA") {
@@ -435,12 +440,20 @@ pub fn show_map_browser(ctx: &egui::Context, app: &mut EditorApp) {
                 ui.label("Search:");
                 ui.text_edit_singleline(&mut app.map_browser.filter);
 
-                if ui.button("Browse Folder...").clicked()
-                    && let Some(dir) = rfd::FileDialog::new()
+                if ui.button("Browse Folder...").clicked() {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    let picked_dir: Option<PathBuf> = rfd::FileDialog::new()
                         .set_title("Select Map Directory")
-                        .pick_folder()
-                {
-                    app.map_browser.scan_custom_dir(&dir, ctx);
+                        .pick_folder();
+                    #[cfg(target_arch = "wasm32")]
+                    let picked_dir: Option<PathBuf> = {
+                        log::warn!("Browse Folder is not available in the web build");
+                        None
+                    };
+
+                    if let Some(dir) = picked_dir {
+                        app.map_browser.scan_custom_dir(&dir, ctx);
+                    }
                 }
 
                 if ui.button("Rescan").clicked() {

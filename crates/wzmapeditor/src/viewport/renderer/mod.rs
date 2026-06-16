@@ -11,7 +11,7 @@ mod terrain_pass;
 mod util;
 mod water_sky;
 
-use std::time::Instant;
+use web_time::Instant;
 
 use eframe::wgpu::util::DeviceExt as _;
 

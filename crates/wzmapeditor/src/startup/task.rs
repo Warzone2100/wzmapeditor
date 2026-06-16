@@ -24,6 +24,7 @@ pub struct TaskHandle<T> {
     label: &'static str,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<T: Send + 'static> TaskHandle<T> {
     /// Spawn `work` on a fresh background thread; the handle carries its
     /// result back to the polling thread. Dropping the handle before the
@@ -63,6 +64,40 @@ impl<T: Send + 'static> TaskHandle<T> {
             })
             .expect("spawn task thread");
         log::debug!("[task:{label}] spawned (with progress)");
+        Self {
+            receiver: rx,
+            label,
+        }
+    }
+}
+
+// wasm32 has no usable OS threads in the browser (GitHub Pages cannot send the
+// COOP/COEP headers SharedArrayBuffer requires), so each task runs synchronously
+// at spawn time and queues its result for the same `try_take` poll the native
+// path uses. Callers are unchanged; the `Send` bound is dropped since nothing
+// crosses a thread boundary.
+#[cfg(target_arch = "wasm32")]
+impl<T: 'static> TaskHandle<T> {
+    pub fn spawn<F>(label: &'static str, work: F) -> Self
+    where
+        F: FnOnce() -> T + 'static,
+    {
+        let (tx, rx) = mpsc::channel();
+        let _ = tx.send(work());
+        log::debug!("[task:{label}] ran inline (wasm)");
+        Self {
+            receiver: rx,
+            label,
+        }
+    }
+
+    pub fn spawn_with_progress<F>(label: &'static str, progress: Arc<AtomicU32>, work: F) -> Self
+    where
+        F: FnOnce(Arc<AtomicU32>) -> T + 'static,
+    {
+        let (tx, rx) = mpsc::channel();
+        let _ = tx.send(work(progress));
+        log::debug!("[task:{label}] ran inline with progress (wasm)");
         Self {
             receiver: rx,
             label,

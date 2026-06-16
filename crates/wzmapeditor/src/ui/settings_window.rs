@@ -356,14 +356,22 @@ fn show_game_settings(ui: &mut Ui, ctx: &egui::Context, app: &mut EditorApp) {
             commit_wz_executable(app);
         }
         if ui.button("Browse...").clicked() {
-            let mut picker = rfd::FileDialog::new().set_title("Select Warzone 2100 executable");
-            #[cfg(target_os = "windows")]
-            {
-                picker = picker.add_filter("Executable", &["exe"]);
-            }
-            #[cfg(not(target_os = "windows"))]
-            let _ = &mut picker;
-            if let Some(path) = picker.pick_file() {
+            #[cfg(not(target_arch = "wasm32"))]
+            let picked = {
+                let mut picker = rfd::FileDialog::new().set_title("Select Warzone 2100 executable");
+                #[cfg(target_os = "windows")]
+                {
+                    picker = picker.add_filter("Executable", &["exe"]);
+                }
+                #[cfg(not(target_os = "windows"))]
+                let _ = &mut picker;
+                picker.pick_file()
+            };
+            #[cfg(target_arch = "wasm32")]
+            let picked: Option<std::path::PathBuf> = None;
+            #[cfg(target_arch = "wasm32")]
+            log::warn!("Browsing for an executable is not available in the web build");
+            if let Some(path) = picked {
                 app.settings_wz_exe_text = path.display().to_string();
                 app.config.wz_executable = Some(path);
                 app.config.save();
@@ -406,14 +414,20 @@ fn show_game_settings(ui: &mut Ui, ctx: &egui::Context, app: &mut EditorApp) {
         if resp.lost_focus() {
             commit_wz_config_dir(app);
         }
-        if ui.button("Browse...").clicked()
-            && let Some(dir) = rfd::FileDialog::new()
+        if ui.button("Browse...").clicked() {
+            #[cfg(not(target_arch = "wasm32"))]
+            let picked = rfd::FileDialog::new()
                 .set_title("Select WZ2100 Configuration Directory")
-                .pick_folder()
-        {
-            app.settings_wz_config_dir_text = dir.display().to_string();
-            app.config.wz_config_dir = Some(dir);
-            app.config.save();
+                .pick_folder();
+            #[cfg(target_arch = "wasm32")]
+            let picked: Option<std::path::PathBuf> = None;
+            #[cfg(target_arch = "wasm32")]
+            log::warn!("Browsing for a configuration directory is not available in the web build");
+            if let Some(dir) = picked {
+                app.settings_wz_config_dir_text = dir.display().to_string();
+                app.config.wz_config_dir = Some(dir);
+                app.config.save();
+            }
         }
         if app.config.wz_config_dir.is_some() && ui.button("Clear").clicked() {
             app.config.wz_config_dir = None;

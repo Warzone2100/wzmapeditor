@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
-use std::time::Instant;
+use web_time::Instant;
 
 use serde::{Deserialize, Serialize};
 
@@ -316,8 +316,8 @@ fn sanitize_name(name: &str) -> String {
 }
 
 fn unix_now() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
 }

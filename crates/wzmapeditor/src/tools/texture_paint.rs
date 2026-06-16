@@ -157,7 +157,7 @@ fn random_orientation() -> (u8, bool, bool) {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
     let mut hasher = DefaultHasher::new();
-    std::time::SystemTime::now().hash(&mut hasher);
+    web_time::SystemTime::now().hash(&mut hasher);
     let h = hasher.finish();
     let rot = (h & 3) as u8;
     let xf = (h >> 2) & 1 == 1;

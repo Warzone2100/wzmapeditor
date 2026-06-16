@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 const SUBMISSION_BASE_URL: &str = "https://github.com/Warzone2100/map-submission/issues/new";
 const ISSUE_TEMPLATE: &str = "submit_map.yml";
+#[cfg(not(target_arch = "wasm32"))]
 const CONTENTS_API_BASE: &str = "https://api.github.com/repos";
 
 /// GitHub issue-form dropdowns match prefilled values against the full option
@@ -38,9 +39,22 @@ fn repos_for_players(players: u8) -> &'static [&'static str] {
 
 #[derive(Debug, Clone)]
 pub enum NameCheck {
+    #[cfg_attr(
+        target_arch = "wasm32",
+        expect(dead_code, reason = "constructed only by the native HTTP name check")
+    )]
     Clear,
-    Conflict { repo: String, html_url: String },
-    Unverified { reason: String },
+    #[cfg_attr(
+        target_arch = "wasm32",
+        expect(dead_code, reason = "constructed only by the native HTTP name check")
+    )]
+    Conflict {
+        repo: String,
+        html_url: String,
+    },
+    Unverified {
+        reason: String,
+    },
 }
 
 pub fn check_name_unique(name: &str, players: u8) -> NameCheck {
@@ -51,24 +65,35 @@ pub fn check_name_unique(name: &str, players: u8) -> NameCheck {
         };
     }
 
-    let mut unverified_reason: Option<String> = None;
-    for repo in repos {
-        let url = format!("{CONTENTS_API_BASE}/{repo}/contents/maps/{name}");
-        match ureq::get(&url).call() {
-            Ok(_) => {
-                return NameCheck::Conflict {
-                    repo: (*repo).to_string(),
-                    html_url: format!("https://github.com/{repo}/tree/main/maps/{name}"),
-                };
-            }
-            Err(ureq::Error::StatusCode(404)) => {}
-            Err(e) => {
-                unverified_reason.get_or_insert_with(|| format!("{repo}: {e}"));
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut unverified_reason: Option<String> = None;
+        for repo in repos {
+            let url = format!("{CONTENTS_API_BASE}/{repo}/contents/maps/{name}");
+            match ureq::get(&url).call() {
+                Ok(_) => {
+                    return NameCheck::Conflict {
+                        repo: (*repo).to_string(),
+                        html_url: format!("https://github.com/{repo}/tree/main/maps/{name}"),
+                    };
+                }
+                Err(ureq::Error::StatusCode(404)) => {}
+                Err(e) => {
+                    unverified_reason.get_or_insert_with(|| format!("{repo}: {e}"));
+                }
             }
         }
+
+        unverified_reason.map_or(NameCheck::Clear, |reason| NameCheck::Unverified { reason })
     }
 
-    unverified_reason.map_or(NameCheck::Clear, |reason| NameCheck::Unverified { reason })
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = (name, repos);
+        NameCheck::Unverified {
+            reason: "Name check is not available in the web build".to_string(),
+        }
+    }
 }
 
 pub fn submission_url(map_name: &str) -> String {
@@ -82,6 +107,7 @@ pub fn submission_url(map_name: &str) -> String {
 
 /// A WZ map is already a zip archive; only the extension needs to change
 /// for GitHub's web form to accept it as an attachable archive.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn write_wz_zip(wz_path: &Path) -> std::io::Result<PathBuf> {
     let file_name = wz_path.file_name().ok_or_else(|| {
         std::io::Error::new(
@@ -105,10 +131,37 @@ pub fn write_wz_zip(wz_path: &Path) -> std::io::Result<PathBuf> {
     }
 }
 
+/// Packaging the `.wz.zip` is native-only for now; the web build has no
+/// filesystem to write the archive to.
+#[cfg(target_arch = "wasm32")]
+pub fn write_wz_zip(wz_path: &Path) -> std::io::Result<PathBuf> {
+    let _ = wz_path;
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "Packaging the map archive is not available in the web build",
+    ))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn open_in_browser(url: &str) -> std::io::Result<()> {
     open::that(url)
 }
 
+#[cfg(target_arch = "wasm32")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "signature must match the native open_in_browser"
+)]
+pub fn open_in_browser(url: &str) -> std::io::Result<()> {
+    // Open in a new tab so the editor (and its unsaved state) isn't navigated
+    // away from.
+    if let Some(window) = web_sys::window() {
+        let _ = window.open_with_url_and_target(url, "_blank");
+    }
+    Ok(())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn reveal_in_file_manager(path: &Path) {
     #[cfg(target_os = "macos")]
     let result = std::process::Command::new("open")
@@ -130,6 +183,12 @@ pub fn reveal_in_file_manager(path: &Path) {
     if let Err(e) = result {
         log::warn!("Failed to reveal {}: {e}", path.display());
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn reveal_in_file_manager(path: &Path) {
+    let _ = path;
+    log::warn!("Revealing a file in the file manager is not available in the web build");
 }
 
 fn percent_encode(s: &str) -> String {

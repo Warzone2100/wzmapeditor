@@ -75,9 +75,10 @@ fn compute_shadow(world_pos: vec3<f32>) -> f32 {
     );
     let shadow_depth = shadow_ndc.z;
 
-    if shadow_uv.x < 0.0 || shadow_uv.x > 1.0 || shadow_uv.y < 0.0 || shadow_uv.y > 1.0 {
-        return 1.0;
-    }
+    // WebGPU bans textureSampleCompare in non-uniform control flow, so the
+    // out-of-bounds case folds into select() rather than an early return.
+    let in_bounds = shadow_uv.x >= 0.0 && shadow_uv.x <= 1.0
+        && shadow_uv.y >= 0.0 && shadow_uv.y <= 1.0;
 
     let texel_size = 1.0 / f32(textureDimensions(shadow_map).x);
     var visibility = 0.0;
@@ -93,7 +94,7 @@ fn compute_shadow(world_pos: vec3<f32>) -> f32 {
             );
         }
     }
-    return visibility / 9.0;
+    return select(1.0, visibility / 9.0, in_bounds);
 }
 
 @fragment

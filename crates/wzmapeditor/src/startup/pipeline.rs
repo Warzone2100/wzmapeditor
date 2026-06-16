@@ -4,6 +4,7 @@
 //! background loads complete, and [`create_startup`] which spawns all initial
 //! background threads and constructs the phase.
 
+#[cfg(not(target_arch = "wasm32"))]
 use crate::app::EditorApp;
 use crate::config::{EditorConfig, Tileset};
 use crate::startup::task::TaskHandle;
@@ -48,6 +49,7 @@ pub(crate) fn spawn_tileset_load_for(
 /// Default map to open on a fresh first-run, after the user picks a data
 /// directory and there's no CLI argument or remembered last map. Loaded
 /// from `base.wz` directly when present, otherwise from the extracted tree.
+#[cfg(not(target_arch = "wasm32"))]
 const DEFAULT_FIRST_RUN_MAP_PREFIX: &str = "multiplay/maps/3c-Gamma";
 
 /// Spawn a thread that loads the default first-run map (`3c-Gamma`).
@@ -56,6 +58,7 @@ const DEFAULT_FIRST_RUN_MAP_PREFIX: &str = "multiplay/maps/3c-Gamma";
 /// Tries `mp.wz` first (parallelisable with the base.wz extraction worker),
 /// then falls back to a pre-extracted directory layout. Returns `None` when
 /// neither source is available; callers treat that as "no default map".
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn spawn_default_first_run_map(
     config: &EditorConfig,
 ) -> Option<TaskHandle<Option<(wz_maplib::WzMap, LoadMapMeta)>>> {
@@ -186,6 +189,13 @@ pub enum StartupPhase {
         error: Option<String>,
         /// Map load task kept alive across Setup so a CLI arg or
         /// `last_opened_map` can be drained after the user picks a directory.
+        #[cfg_attr(
+            target_arch = "wasm32",
+            expect(
+                dead_code,
+                reason = "drained only by the native data-directory transition; the web build has no data-dir picker yet"
+            )
+        )]
         map_rx: Option<TaskHandle<Option<(wz_maplib::WzMap, LoadMapMeta)>>>,
     },
     /// Background loads in progress. Show splash screen, skip editor UI.
@@ -523,6 +533,7 @@ pub fn create_startup(config: &EditorConfig) -> StartupInit {
 /// `extraction_in_flight` should be `true` if the caller has already invoked
 /// `start_base_wz_extraction`; in that case tileset and stats are spawned
 /// later by `workers::poll_startup_loads` once extraction completes.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn transition_setup_to_loading(app: &mut EditorApp, extraction_in_flight: bool) {
     let map_rx = match std::mem::replace(&mut app.startup_phase, StartupPhase::Ready) {
         StartupPhase::Setup { map_rx, .. } => map_rx,

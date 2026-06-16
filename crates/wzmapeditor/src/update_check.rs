@@ -6,16 +6,21 @@
 //! `mpsc` channel for the UI thread to surface. Failures are silent: a
 //! flaky network does not block the editor or notify the user.
 
-use std::path::PathBuf;
 use std::sync::mpsc;
-use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+#[cfg(not(target_arch = "wasm32"))]
+use std::{path::PathBuf, thread};
 
+#[cfg(not(target_arch = "wasm32"))]
+use web_time::{Duration, SystemTime, UNIX_EPOCH};
+
+#[cfg(not(target_arch = "wasm32"))]
 use serde::{Deserialize, Serialize};
 
+#[cfg(not(target_arch = "wasm32"))]
 const RELEASES_URL: &str = "https://api.github.com/repos/Warzone2100/wzmapeditor/releases/latest";
 
 /// Skip the network call if we already checked within this window.
+#[cfg(not(target_arch = "wasm32"))]
 const CACHE_TTL: Duration = Duration::from_hours(24);
 
 /// Newer release the user could upgrade to.
@@ -25,6 +30,7 @@ pub struct UpdateInfo {
     pub html_url: String,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Serialize, Deserialize)]
 struct Cache {
     checked_at_unix: u64,
@@ -37,20 +43,32 @@ struct Cache {
 /// The channel yields at most one message and then closes when the worker
 /// exits. The caller should drop the receiver once it has produced a value.
 pub fn spawn_check() -> mpsc::Receiver<UpdateInfo> {
-    let (tx, rx) = mpsc::channel();
-    let spawned = thread::Builder::new()
-        .name("update-check".into())
-        .spawn(move || {
-            if let Some(info) = check() {
-                let _ = tx.send(info);
-            }
-        });
-    if let Err(e) = spawned {
-        log::warn!("Failed to spawn update-check thread: {e}");
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let (tx, rx) = mpsc::channel();
+        let spawned = thread::Builder::new()
+            .name("update-check".into())
+            .spawn(move || {
+                if let Some(info) = check() {
+                    let _ = tx.send(info);
+                }
+            });
+        if let Err(e) = spawned {
+            log::warn!("Failed to spawn update-check thread: {e}");
+        }
+        rx
     }
-    rx
+    // The update check relies on a blocking HTTP client unavailable in the
+    // web build; hand back an already-closed channel so the poller idles.
+    #[cfg(target_arch = "wasm32")]
+    {
+        let (tx, rx) = mpsc::channel();
+        drop(tx);
+        rx
+    }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn check() -> Option<UpdateInfo> {
     let (latest, html_url) = if let Some(c) = fresh_cache() {
         (c.latest, c.html_url)
@@ -65,6 +83,7 @@ fn check() -> Option<UpdateInfo> {
     (parsed > current).then_some(UpdateInfo { latest, html_url })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn fresh_cache() -> Option<Cache> {
     let cache = read_cache()?;
     let checked_at = UNIX_EPOCH + Duration::from_secs(cache.checked_at_unix);
@@ -72,6 +91,7 @@ fn fresh_cache() -> Option<Cache> {
     (age < CACHE_TTL).then_some(cache)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn fetch_latest() -> Option<(String, String)> {
     log::info!("Checking for editor updates: {RELEASES_URL}");
     let user_agent = format!("wzmapeditor/{}", env!("CARGO_PKG_VERSION"));
@@ -103,15 +123,18 @@ fn fetch_latest() -> Option<(String, String)> {
     Some((latest, html_url))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn cache_path() -> PathBuf {
     crate::config::config_dir().join("update-cache.json")
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn read_cache() -> Option<Cache> {
     let bytes = std::fs::read(cache_path()).ok()?;
     serde_json::from_slice(&bytes).ok()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn write_cache(latest: &str, html_url: &str) {
     let checked_at_unix = SystemTime::now()
         .duration_since(UNIX_EPOCH)

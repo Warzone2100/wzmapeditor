@@ -6,6 +6,7 @@ pub const PNG_BYTES: &[u8] = include_bytes!("../icons/256x256.png");
 
 /// Decode the icon for `eframe::NativeOptions`. Falls back to an empty
 /// `IconData` if decode fails so a corrupt asset can't block startup.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn for_window() -> egui::IconData {
     match image::load_from_memory(PNG_BYTES) {
         Ok(img) => {

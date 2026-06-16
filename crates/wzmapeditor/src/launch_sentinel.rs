@@ -3,6 +3,7 @@
 //! GPU init (e.g. DXC shader compile with missing `dxil.dll`) and we can
 //! fall back to a different backend on the next try.
 
+#[cfg(not(target_arch = "wasm32"))]
 use crate::config::GraphicsBackend;
 use std::path::PathBuf;
 
@@ -11,6 +12,7 @@ fn sentinel_path() -> PathBuf {
 }
 
 /// Read the sentinel left by a prior launch (if any) and remove it.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn consume() -> Option<GraphicsBackend> {
     let path = sentinel_path();
     let data = std::fs::read_to_string(&path).ok()?;
@@ -26,6 +28,7 @@ pub fn consume() -> Option<GraphicsBackend> {
 
 /// Mark the next launch as "in progress with this backend". Cleared by
 /// `disarm()` once the first frame is painted.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn arm(backend: GraphicsBackend) {
     let path = sentinel_path();
     if let Some(parent) = path.parent() {

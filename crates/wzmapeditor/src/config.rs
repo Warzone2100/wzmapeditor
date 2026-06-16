@@ -22,6 +22,10 @@ impl Default for GraphicsBackend {
         return Self::Metal;
         #[cfg(all(unix, not(target_os = "macos")))]
         return Self::Vulkan;
+        // In-browser wgpu auto-selects WebGPU or the WebGL2 fallback; this
+        // value is only a placeholder for the (unused) backend config on web.
+        #[cfg(target_arch = "wasm32")]
+        return Self::OpenGl;
     }
 }
 
@@ -51,6 +55,10 @@ impl GraphicsBackend {
         #[cfg(all(unix, not(target_os = "macos")))]
         {
             &[Self::Vulkan, Self::OpenGl]
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            &[Self::OpenGl]
         }
     }
 }
@@ -119,6 +127,7 @@ pub enum PresentMode {
 
 impl PresentMode {
     /// Human-readable label for UI surfaces.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn label(self) -> &'static str {
         match self {
             Self::SmartVsync => "Auto (recommended)",
@@ -507,6 +516,7 @@ where
 }
 
 /// `<config_dir>/wzmapeditor.log`. Overwritten each launch.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn log_file_path() -> PathBuf {
     dirs_next()
         .unwrap_or_else(|| PathBuf::from("."))

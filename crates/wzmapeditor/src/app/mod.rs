@@ -214,7 +214,7 @@ pub struct EditorApp {
     pub window_focused: bool,
     /// Wall-clock timestamp of the last frame painted under an FPS cap,
     /// used to compute how long to sleep when enforcing `fps_limit`.
-    pub last_paint_at: Option<std::time::Instant>,
+    pub last_paint_at: Option<web_time::Instant>,
     /// `update()` call count, used to detect the first surviving frame
     /// so the launch sentinel can be cleared.
     pub update_count: u32,

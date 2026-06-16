@@ -804,12 +804,18 @@ fn commit_save_as_metadata(app: &mut EditorApp) {
     }
 
     let filename = app.suggested_wz_filename();
-    let Some(path) = rfd::FileDialog::new()
+
+    #[cfg(not(target_arch = "wasm32"))]
+    let picked: Option<std::path::PathBuf> = rfd::FileDialog::new()
         .set_title("Save As .wz Archive")
         .set_file_name(filename)
         .add_filter("WZ Map", &["wz"])
-        .save_file()
-    else {
+        .save_file();
+
+    #[cfg(target_arch = "wasm32")]
+    let picked: Option<std::path::PathBuf> = Some(std::path::PathBuf::from(filename));
+
+    let Some(path) = picked else {
         return;
     };
 
@@ -1091,6 +1097,9 @@ pub(super) fn show_publish_instructions_dialog(ctx: &egui::Context, app: &mut Ed
                 let reveal_label = "Show in Explorer";
                 #[cfg(all(unix, not(target_os = "macos")))]
                 let reveal_label = "Open Folder";
+                // target_os is "unknown" on wasm, so none of the above match.
+                #[cfg(target_arch = "wasm32")]
+                let reveal_label = "Show File";
 
                 let open_label = if app.publish_instructions_dialog.browser_opened {
                     "Reopen submission form"

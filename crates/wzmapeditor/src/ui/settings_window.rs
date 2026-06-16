@@ -773,6 +773,17 @@ fn show_keybindings_settings(ui: &mut Ui, ctx: &egui::Context, app: &mut EditorA
         });
 }
 
+/// A hyperlink that opens in a new browser tab. On the web build a same-tab
+/// link would navigate away from the editor (losing all unsaved state); on
+/// native it opens the system browser as usual.
+fn new_tab_link(ui: &mut Ui, label: impl Into<egui::WidgetText>, url: &str) -> egui::Response {
+    let resp = ui.link(label);
+    if resp.clicked() {
+        ui.ctx().open_url(egui::OpenUrl::new_tab(url));
+    }
+    resp
+}
+
 fn show_about_settings(ui: &mut Ui, ctx: &egui::Context, app: &mut EditorApp) {
     if !app.editor_icon_tried {
         app.editor_icon = crate::icon::for_egui(ctx, 256);
@@ -790,15 +801,20 @@ fn show_about_settings(ui: &mut Ui, ctx: &egui::Context, app: &mut EditorApp) {
         ui.heading("wzmapeditor");
         ui.label(RichText::new(format!("version {}", env!("CARGO_PKG_VERSION"))).weak());
 
-        ui.add_space(8.0);
-        if ui
-            .checkbox(
-                &mut app.config.check_for_updates_on_startup,
-                "Check for updates on startup",
-            )
-            .changed()
+        // The web build is delivered via CI, so it has no update check to run;
+        // the toggle would be a no-op there.
+        #[cfg(not(target_arch = "wasm32"))]
         {
-            app.config.save();
+            ui.add_space(8.0);
+            if ui
+                .checkbox(
+                    &mut app.config.check_for_updates_on_startup,
+                    "Check for updates on startup",
+                )
+                .changed()
+            {
+                app.config.save();
+            }
         }
 
         ui.add_space(14.0);
@@ -831,14 +847,16 @@ fn show_about_settings(ui: &mut Ui, ctx: &egui::Context, app: &mut EditorApp) {
     ui.horizontal(|ui| {
         let pad = ((ui.available_width() - link_row_w) * 0.5).max(0.0);
         ui.add_space(pad);
-        ui.hyperlink_to("Homepage", env!("CARGO_PKG_HOMEPAGE"));
+        new_tab_link(ui, "Homepage", env!("CARGO_PKG_HOMEPAGE"));
         ui.label(RichText::new("\u{2022}").weak());
-        ui.hyperlink_to(
+        new_tab_link(
+            ui,
             "Report an Issue",
             concat!(env!("CARGO_PKG_HOMEPAGE"), "/issues"),
         );
         ui.label(RichText::new("\u{2022}").weak());
-        ui.hyperlink_to(
+        new_tab_link(
+            ui,
             env!("CARGO_PKG_LICENSE"),
             concat!(env!("CARGO_PKG_HOMEPAGE"), "/blob/main/LICENSE"),
         );
@@ -850,7 +868,8 @@ fn show_about_settings(ui: &mut Ui, ctx: &egui::Context, app: &mut EditorApp) {
         let pad = ((ui.available_width() - credit_row_w) * 0.5).max(0.0);
         ui.add_space(pad);
         ui.label(RichText::new("Created by").weak().small());
-        ui.hyperlink_to(
+        new_tab_link(
+            ui,
             RichText::new("phetrommer").small(),
             "https://github.com/phetrommer",
         );

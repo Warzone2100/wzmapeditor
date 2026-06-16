@@ -66,8 +66,18 @@ fn set_setup_error(app: &mut EditorApp, msg: &str) {
 }
 
 /// Read a `File`'s bytes via the asynchronous `Blob.arrayBuffer()` API.
+pub(crate) async fn read_file_bytes(file: &web_sys::File) -> Result<Vec<u8>, String> {
     let buffer = JsFuture::from(file.array_buffer())
         .await
         .map_err(|e: JsValue| format!("{e:?}"))?;
     Ok(js_sys::Uint8Array::new(&buffer).to_vec())
 }
+    crate::web::dom::pick_file(".wz", move |file| match file {
+        Some(file) => spawn_local(async move {
+        }),
+        None => {
+            // Picker dismissed: drop `tx`/`progress` so `poll_high_upload` sees
+            // the channel disconnect and releases the upload latch.
+            ctx.request_repaint();
+        }
+    file: web_sys::File,

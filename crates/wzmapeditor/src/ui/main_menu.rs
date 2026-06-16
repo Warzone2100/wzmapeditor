@@ -13,7 +13,7 @@ pub fn show_menu_bar(ui: &mut Ui, app: &mut EditorApp) {
                 ui.close();
             }
             if ui.button("Open .wz...").clicked() {
-                actions::open_wz_dialog(app);
+                actions::open_wz_dialog(app, ui.ctx());
                 ui.close();
             }
             if ui.button("Browse Maps...").clicked() {
@@ -23,7 +23,7 @@ pub fn show_menu_bar(ui: &mut Ui, app: &mut EditorApp) {
             ui.separator();
             ui.menu_button("Import...", |ui| {
                 if ui.button(".wz Archive...").clicked() {
-                    actions::import_wz(app);
+                    actions::import_wz(app, ui.ctx());
                     ui.close();
                 }
                 ui.separator();

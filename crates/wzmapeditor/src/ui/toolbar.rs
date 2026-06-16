@@ -33,7 +33,7 @@ pub fn show_toolbar(ui: &mut Ui, app: &mut EditorApp) {
             .on_hover_text("Open .wz")
             .clicked()
         {
-            actions::open_wz_dialog(app);
+            actions::open_wz_dialog(app, ui.ctx());
         }
         if ui
             .add_enabled(has_doc, egui::Button::new("Save"))

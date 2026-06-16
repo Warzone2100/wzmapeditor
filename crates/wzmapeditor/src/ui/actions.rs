@@ -3,18 +3,25 @@
 use crate::app::EditorApp;
 use crate::publish;
 
-pub(crate) fn open_wz_dialog(app: &mut EditorApp) {
-    if let Some(path) = rfd::FileDialog::new()
-        .set_title("Open .wz Map")
-        .add_filter("WZ Map", &["wz"])
-        .pick_file()
+pub(crate) fn open_wz_dialog(app: &mut EditorApp, ctx: &egui::Context) {
+    #[cfg(target_arch = "wasm32")]
+    crate::web_map_io::begin_open(app, ctx);
+
+    #[cfg(not(target_arch = "wasm32"))]
     {
-        match wz_maplib::io_wz::load_from_wz_archive(&path) {
-            Ok(map) => {
-                let save = Some(path.clone());
-                app.load_map(map, Some(path), save, None);
+        let _ = ctx;
+        let picked = rfd::FileDialog::new()
+            .set_title("Open .wz Map")
+            .add_filter("WZ Map", &["wz"])
+            .pick_file();
+        if let Some(path) = picked {
+            match wz_maplib::io_wz::load_from_wz_archive(&path) {
+                Ok(map) => {
+                    let save = Some(path.clone());
+                    app.load_map(map, Some(path), save, None);
+                }
+                Err(e) => app.report_wz_load_error(&path, &e),
             }
-            Err(e) => app.report_wz_load_error(&path, &e),
         }
     }
 }

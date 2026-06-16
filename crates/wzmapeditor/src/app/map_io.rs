@@ -210,9 +210,12 @@ pub(super) fn save_to_wz(app: &mut EditorApp, path: &std::path::Path) {
     doc.map.players = players;
     doc.map.tileset = tileset_name;
     doc.map.custom_templates_json = custom_templates_json;
-    match wz_maplib::io_wz::save_to_wz_archive(&doc.map, path, wz_maplib::OutputFormat::Ver3) {
+    match write_wz(&doc.map, path) {
         Ok(()) => {
             app.save_path = Some(path.to_path_buf());
+            #[cfg(target_arch = "wasm32")]
+            app.log(format!("Downloaded .wz archive: {}", path.display()));
+            #[cfg(not(target_arch = "wasm32"))]
             app.log(format!("Saved .wz archive to {}", path.display()));
             if let Some(ref mut doc) = app.document {
                 doc.mark_clean();
@@ -221,6 +224,30 @@ pub(super) fn save_to_wz(app: &mut EditorApp, path: &std::path::Path) {
         }
         Err(e) => app.log(format!("Failed to save .wz: {e}")),
     }
+}
+
+/// Write the `.wz` archive to `path` on disk.
+#[cfg(not(target_arch = "wasm32"))]
+fn write_wz(map: &wz_maplib::WzMap, path: &std::path::Path) -> Result<(), String> {
+    wz_maplib::io_wz::save_to_wz_archive(map, path, wz_maplib::OutputFormat::Ver3)
+        .map_err(|e| e.to_string())
+}
+
+/// Serialize the `.wz` archive and trigger a browser download.
+#[cfg(target_arch = "wasm32")]
+fn write_wz(map: &wz_maplib::WzMap, path: &std::path::Path) -> Result<(), String> {
+    let bytes = wz_maplib::io_wz::save_to_wz_writer(
+        map,
+        std::io::Cursor::new(Vec::new()),
+        wz_maplib::OutputFormat::Ver3,
+    )
+    .map(std::io::Cursor::into_inner)
+    .map_err(|e| e.to_string())?;
+    let filename = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("map.wz");
+    crate::web_map_io::download(filename, &bytes)
 }
 
 /// Poll background auto-save completion.

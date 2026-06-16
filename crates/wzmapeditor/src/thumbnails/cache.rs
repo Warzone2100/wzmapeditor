@@ -342,6 +342,7 @@ impl ThumbnailCache {
 
 /// Sanitize a cache key for use as a filename. Replaces characters
 /// invalid on Windows with underscores.
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn sanitize_filename(key: &str) -> String {
     key.chars()
         .map(|c| match c {

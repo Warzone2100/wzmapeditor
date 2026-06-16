@@ -35,11 +35,20 @@ pub use super::shadow::ShadowResources;
 
 use super::thumbnail::{self, ThumbnailResources};
 pub use super::thumbnail::{PREVIEW_THUMB_SIZE, THUMB_SIZE, ThumbnailEntry};
+pub(crate) use super::thumbnail::{READBACK_POOL_SIZE, ReadbackStatus, ThumbnailReadback};
 
+pub use super::texture_loader::{linear_to_srgb, load_ktx2_as_rgba_bytes};
+// Ground/decal texture-array decode is native-only: the web build runs at
+// Classic quality, which textures from the tile atlas rather than these arrays.
+#[cfg(not(target_arch = "wasm32"))]
 pub use super::texture_loader::{
-    linear_to_srgb, load_decal_normal_specular_data, load_decal_texture_data_from_wz,
-    load_ground_normal_specular_data, load_ground_texture_data, load_ktx2_as_rgba,
+    load_decal_normal_specular_data, load_decal_texture_data_from_wz,
+    load_ground_normal_specular_data, load_ground_texture_data,
 };
+// KTX2 path decoding (basis-universal FFI) is native-only; the web build
+// uploads PNG ground textures via the in-memory byte path instead.
+#[cfg(not(target_arch = "wasm32"))]
+pub use super::texture_loader::load_ktx2_as_rgba;
 
 /// Holds all wgpu rendering state for the 3D viewport.
 pub struct EditorRenderer {

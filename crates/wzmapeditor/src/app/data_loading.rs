@@ -1,18 +1,22 @@
 //! Background data loading - ground textures, base.wz extraction, game stats.
 
-use super::{EditorApp, GroundTextureLoadState, GroundTexturePayload, GroundUploadViews};
+use super::EditorApp;
+#[cfg(not(target_arch = "wasm32"))]
+use super::{GroundTextureLoadState, GroundTexturePayload, GroundUploadViews};
+#[cfg(not(target_arch = "wasm32"))]
 use crate::startup::GroundPrecacheResult;
 use crate::viewport::model_loader::ModelLoader;
 
 /// Loads metadata synchronously, then spawns a background thread to read
 /// texture RGBA data. The GPU upload happens on the main thread when the
 /// background thread completes (polled each frame).
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn start_ground_data_load(app: &mut EditorApp) {
     if app.ground_data.is_some() || app.rt.ground_texture_load.is_some() {
         return;
     }
-    let data_dir = match app.config.data_dir {
-        Some(ref d) => d.clone(),
+    let assets = match app.assets {
+        Some(ref a) => a.clone(),
         None => return,
     };
     let tileset_name = match app.current_tileset {
@@ -143,11 +147,45 @@ pub(super) fn start_ground_data_load(app: &mut EditorApp) {
     app.log("Loading ground textures...".to_string());
 }
 
+/// Web variant: publish the ground metadata and skip the texture decode.
+///
+/// The web build is locked to Classic terrain, which textures from the tile
+/// atlas rather than the 1024-pixel ground-type arrays the native loader
+/// decodes. Decoding those on the single-threaded browser would freeze the tab
+/// for textures that are never sampled, so this loads only the metadata the
+/// terrain mesh needs and returns.
+#[cfg(target_arch = "wasm32")]
+pub(super) fn start_ground_data_load(app: &mut EditorApp) {
+    if app.ground_data.is_some() {
+        return;
+    }
+    let Some(assets) = app.assets.clone() else {
+        return;
+    };
+    let tileset_name = match app.current_tileset {
+        crate::config::Tileset::Arizona => "arizona",
+        crate::config::Tileset::Urban => "urban",
+        crate::config::Tileset::Rockies => "rockies",
+    };
+    let Some(gd) = crate::viewport::ground_types::GroundData::load(assets.as_ref(), tileset_name)
+    else {
+        log::warn!(
+            "Failed to load ground data for tileset {:?}",
+            app.current_tileset
+        );
+        return;
+    };
+    app.ground_data = Some(gd);
+    app.terrain_dirty = true;
+    app.log("Loaded ground data (Classic terrain quality)".to_string());
+}
+
 /// Pre-decode and cache ground textures for all tilesets in the background.
 ///
 /// Spawns a thread that decodes KTX2 ground textures for Arizona, Urban,
 /// and Rockies, saving decoded PNGs to the ground-cache directory. Only
 /// runs once; skipped if the cache marker already exists.
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn start_ground_precache(app: &mut EditorApp) {
     let data_dir = match app.config.data_dir {
         Some(ref d) => d.clone(),

@@ -339,47 +339,114 @@ impl Default for EditorConfig {
     }
 }
 
+/// localStorage key the web build persists the serialized config under.
+#[cfg(target_arch = "wasm32")]
+const WEB_CONFIG_KEY: &str = "wzmapeditor.config";
+
+#[cfg(target_arch = "wasm32")]
+fn web_local_storage() -> Option<web_sys::Storage> {
+    web_sys::window()?.local_storage().ok().flatten()
+}
+
 impl EditorConfig {
     /// Path to the config file.
+    #[cfg(not(target_arch = "wasm32"))]
     fn config_path() -> PathBuf {
         let base = dirs_next().unwrap_or_else(|| PathBuf::from("."));
         base.join("wzmapeditor.json")
     }
 
-    /// Load config from disk, or return defaults if not found.
+    /// Load config, or return defaults if none is stored.
     pub fn load() -> Self {
-        let path = Self::config_path();
-        if path.exists() {
-            match std::fs::read_to_string(&path) {
-                Ok(content) => match serde_json::from_str(&content) {
-                    Ok(config) => {
-                        log::info!("Loaded config from {}", path.display());
-                        return config;
-                    }
-                    Err(e) => log::warn!("Failed to parse config: {e}"),
-                },
-                Err(e) => log::warn!("Failed to read config: {e}"),
-            }
+        #[cfg(target_arch = "wasm32")]
+        {
+            Self::load_web()
         }
-        log::info!("No config found, using defaults");
-        Self::default()
-    }
-
-    /// Save config to disk.
-    pub fn save(&self) {
-        let path = Self::config_path();
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        match serde_json::to_string_pretty(self) {
-            Ok(json) => {
-                if let Err(e) = std::fs::write(&path, json) {
-                    log::error!("Failed to write config to {}: {}", path.display(), e);
-                } else {
-                    log::info!("Saved config to {}", path.display());
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let path = Self::config_path();
+            if path.exists() {
+                match std::fs::read_to_string(&path) {
+                    Ok(content) => match serde_json::from_str(&content) {
+                        Ok(config) => {
+                            log::info!("Loaded config from {}", path.display());
+                            return config;
+                        }
+                        Err(e) => log::warn!("Failed to parse config: {e}"),
+                    },
+                    Err(e) => log::warn!("Failed to read config: {e}"),
                 }
             }
-            Err(e) => log::error!("Failed to serialize config: {e}"),
+            log::info!("No config found, using defaults");
+            Self::default()
+        }
+    }
+
+    /// Persist config.
+    pub fn save(&self) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.save_web();
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let path = Self::config_path();
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            match serde_json::to_string_pretty(self) {
+                Ok(json) => {
+                    if let Err(e) = std::fs::write(&path, json) {
+                        log::error!("Failed to write config to {}: {}", path.display(), e);
+                    } else {
+                        log::info!("Saved config to {}", path.display());
+                    }
+                }
+                Err(e) => log::error!("Failed to serialize config: {e}"),
+            }
+        }
+    }
+
+    /// Read the config from `localStorage`; defaults when absent or invalid.
+    #[cfg(target_arch = "wasm32")]
+    fn load_web() -> Self {
+        let Some(storage) = web_local_storage() else {
+            log::warn!("localStorage unavailable; using default config");
+            return Self::default();
+        };
+        let Ok(Some(json)) = storage.get_item(WEB_CONFIG_KEY) else {
+            log::info!("No stored config, using defaults");
+            return Self::default();
+        };
+        match serde_json::from_str(&json) {
+            Ok(config) => {
+                log::info!("Loaded config from localStorage");
+                config
+            }
+            Err(e) => {
+                log::warn!("Failed to parse stored config: {e}");
+                Self::default()
+            }
+        }
+    }
+
+    /// Write the config to `localStorage`.
+    #[cfg(target_arch = "wasm32")]
+    fn save_web(&self) {
+        let json = match serde_json::to_string(self) {
+            Ok(json) => json,
+            Err(e) => {
+                log::error!("Failed to serialize config: {e}");
+                return;
+            }
+        };
+        let Some(storage) = web_local_storage() else {
+            log::warn!("localStorage unavailable; config not persisted");
+            return;
+        };
+        match storage.set_item(WEB_CONFIG_KEY, &json) {
+            Ok(()) => log::info!("Saved config to localStorage"),
+            Err(e) => log::warn!("Failed to store config: {e:?}"),
         }
     }
 

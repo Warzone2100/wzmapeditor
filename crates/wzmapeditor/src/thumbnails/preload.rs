@@ -7,13 +7,16 @@
 //! viewport).
 
 use eframe::egui_wgpu;
-use egui::TextureOptions;
 
+#[cfg(not(target_arch = "wasm32"))]
+use super::PreloadItem;
+#[cfg(not(target_arch = "wasm32"))]
+use super::cache::sanitize_filename;
+#[cfg(not(target_arch = "wasm32"))]
 use super::generator::build_gpu_composite;
 use super::{
     PRELOAD_FRAME_BUDGET_MS_EDITOR, PRELOAD_FRAME_BUDGET_MS_SPLASH, PRELOAD_PER_FRAME_EDITOR,
-    PRELOAD_PER_FRAME_SPLASH, PreloadItem, PreloadState, ThumbnailCache, cache::sanitize_filename,
-    with_render_resources, with_render_resources_mut,
+    PRELOAD_PER_FRAME_SPLASH, PreloadState, ThumbnailCache, with_render_resources_mut,
 };
 use crate::viewport::model_loader::ModelLoader;
 
@@ -23,6 +26,19 @@ impl ThumbnailCache {
     /// Called once from `app.rs` after stats and model loader are ready.
     /// Only the active tileset is preloaded eagerly; other tileset disk
     /// caches populate lazily when the user switches tilesets.
+    ///
+    /// The web build skips the eager pass entirely: it has no thumbnail disk
+    /// cache, so warming every structure/feature/template would parse and
+    /// decode hundreds of PIE models inline on the single browser thread and
+    /// freeze the tab. The asset browser renders thumbnails on demand (under a
+    /// per-frame budget) instead.
+    #[cfg_attr(
+        target_arch = "wasm32",
+        expect(
+            unused_variables,
+            reason = "web skips the eager preload; thumbnails render on demand"
+        )
+    )]
     pub fn start_preload(
         &mut self,
         ctx: &egui::Context,
@@ -31,10 +47,16 @@ impl ThumbnailCache {
     ) {
         self.active_tileset = self.current_tileset.clone();
         self.pending_tilesets.clear();
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.preload = PreloadState::Done;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
         self.start_preload_for_current(ctx, stats, model_loader);
     }
 
     /// Build the work list for the current tileset and start rendering.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn start_preload_for_current(
         &mut self,
         ctx: &egui::Context,
@@ -130,6 +152,7 @@ impl ThumbnailCache {
     /// Try to satisfy a preload entry from the warm disk cache. Returns
     /// `true` when the entry should be skipped (already resolved or PNG
     /// already on disk for an inactive tileset).
+    #[cfg(not(target_arch = "wasm32"))]
     fn try_warm_load(
         &mut self,
         ctx: &egui::Context,

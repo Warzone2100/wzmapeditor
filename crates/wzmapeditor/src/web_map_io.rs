@@ -11,11 +11,13 @@
 //! synchronous and runs inline from the save flow.
 
 use std::io::Cursor;
+use std::sync::mpsc;
 
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
 
 use crate::app::EditorApp;
+use crate::web::{Drain, dom, drain_once};
 use crate::web_data::read_file_bytes;
 
 /// A picked `.wz` file: its name stem and raw bytes.
@@ -43,6 +45,12 @@ pub(crate) fn begin_open(app: &mut EditorApp, ctx: &egui::Context) {
 }
 
 /// Drain the open-map channel; load the map or report the error.
+pub(crate) fn poll(app: &mut EditorApp, ctx: &egui::Context) {
+    // The picker's own callback repaints when it has a result, so this poller
+    // does not need to keep the frame loop awake.
+    let outcome = match drain_once(&mut app.rt.web_open_map_rx, ctx, false) {
+        Drain::Ready(outcome) => outcome,
+        Drain::Pending | Drain::Closed => return,
     };
     match outcome {
         Ok(picked) => load(app, picked),

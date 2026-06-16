@@ -48,6 +48,7 @@ pub(crate) fn save_current_or_prompt(app: &mut EditorApp) {
 /// Triggers either `set_data_dir` (extracted layout) or
 /// `start_base_wz_extraction` (`base.wz` archive). If neither marker is
 /// present, logs an error and leaves the existing config alone.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn apply_data_directory(
     app: &mut EditorApp,
     ctx: &egui::Context,

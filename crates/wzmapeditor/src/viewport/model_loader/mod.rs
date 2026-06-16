@@ -29,15 +29,17 @@ pub use stats_mapper::{DroidComponents, StructureWeapons};
 
 /// Manages loading and caching of PIE models from the WZ2100 data directory.
 pub struct ModelLoader {
-    /// `data_dir` root (e.g. `/path/to/warzone2100/data`).
-    data_dir: PathBuf,
+    assets: Arc<dyn crate::assets::AssetSource>,
     cache: LoaderCache,
+    /// Filename to path index for the synchronous PIE lookups, built once on
+    /// first miss. Without it every cold `load_pie` walks the whole asset tree,
+    /// which is super-linear on the in-memory web archive.
+    pie_file_index: Option<HashMap<String, std::path::PathBuf>>,
 }
 
 impl std::fmt::Debug for ModelLoader {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ModelLoader")
-            .field("data_dir", &self.data_dir)
             .field("imd_mappings", &self.cache.imd_map_len())
             .field("uploaded", &self.cache.uploaded_len())
             .field("parsed_cache", &self.cache.parsed_cache_len())
@@ -297,11 +299,16 @@ impl ModelLoader {
         if self.cache.is_not_found(imd_name) {
             return None;
         }
-        let Some(pie_path) = file_finder::find_pie_file(&self.data_dir, imd_name) else {
+        if self.pie_file_index.is_none() {
+            self.pie_file_index = Some(file_finder::build_pie_file_index(self.assets.as_ref()));
+        }
+        let file_index = self.pie_file_index.as_ref().expect("just built above");
+        let Some(pie_path) = file_finder::find_pie_file(self.assets.as_ref(), file_index, imd_name)
+        else {
             log::debug!("PIE file not found: {imd_name}");
             self.cache.mark_not_found(imd_name);
             return None;
         };
-        load_pie_sync(&self.data_dir, &pie_path, self.cache.tileset_index())
+        load_pie_sync(self.assets.as_ref(), &pie_path, self.cache.tileset_index())
     }
 }

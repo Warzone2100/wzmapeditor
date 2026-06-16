@@ -47,75 +47,139 @@ fn splash_card(
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .fixed_size([SPLASH_WIDTH, 0.0])
         .show(ui.ctx(), |ui| {
-            ui.vertical_centered(|ui| {
-                ui.add_space(12.0);
-                if let Some(handle) = icon {
-                    ui.image((
-                        handle.id(),
-                        egui::vec2(SPLASH_ICON_DISPLAY_PX, SPLASH_ICON_DISPLAY_PX),
-                    ));
-                    ui.add_space(8.0);
-                }
-                ui.label(egui::RichText::new("wzmapeditor").size(28.0).strong());
-                ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new("Warzone 2100 Map Editor")
-                        .size(12.0)
-                        .weak(),
-                );
-                ui.add_space(20.0);
-            });
-
-            ui.separator();
-            ui.add_space(8.0);
-
+            splash_title_block(ui, icon);
             body(ui);
-
             ui.add_space(12.0);
         });
 }
 
-/// First-run welcome card. Browse opens a folder picker; valid picks
-/// transition to `Loading`, invalid picks stash an error on Setup.
+/// The shared launcher header: app icon, title, subtitle, and a separator.
+/// Reused so the web data-loading overlay matches the download splash exactly.
+fn splash_title_block(ui: &mut egui::Ui, icon: Option<&egui::TextureHandle>) {
+    ui.vertical_centered(|ui| {
+        ui.add_space(12.0);
+        if let Some(handle) = icon {
+            ui.image((
+                handle.id(),
+                egui::vec2(SPLASH_ICON_DISPLAY_PX, SPLASH_ICON_DISPLAY_PX),
+            ));
+            ui.add_space(8.0);
+        }
+        ui.label(egui::RichText::new("wzmapeditor").size(28.0).strong());
+        ui.add_space(4.0);
+        ui.label(
+            egui::RichText::new("Warzone 2100 Map Editor")
+                .size(12.0)
+                .weak(),
+        );
+        ui.add_space(20.0);
+    });
+
+    ui.separator();
+    ui.add_space(8.0);
+}
+
+/// First-run launcher card. Native lets the user Browse to their install;
+/// the web build downloads the bundled data automatically and shows progress.
 fn show_setup_card(ui: &mut egui::Ui, app: &mut EditorApp) {
     // Snapshot the error so the closure doesn't borrow `app`.
     let error_msg = match &app.startup_phase {
         StartupPhase::Setup { error, .. } => error.clone(),
         _ => return,
     };
-
-    let mut browse_clicked = false;
     let ctx = ui.ctx().clone();
 
-    splash_card(ui, app.editor_icon.as_ref(), |ui| {
-        ui.label("Select the 'data' folder inside your Warzone 2100 install.");
-        ui.add_space(4.0);
-        ui.label(
-            egui::RichText::new("It's the folder that contains base.wz.")
-                .weak()
-                .size(12.0),
-        );
-        ui.add_space(14.0);
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut browse_clicked = false;
+        splash_card(ui, app.editor_icon.as_ref(), |ui| {
+            ui.label("Select the 'data' folder inside your Warzone 2100 install.");
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new("It's the folder that contains base.wz.")
+                    .weak()
+                    .size(12.0),
+            );
+            ui.add_space(14.0);
+            ui.vertical_centered(|ui| {
+                if ui.button("Browse...").clicked() {
+                    browse_clicked = true;
+                }
+            });
+            if let Some(msg) = error_msg.as_deref() {
+                ui.add_space(10.0);
+                ui.colored_label(egui::Color32::from_rgb(220, 80, 80), msg);
+            }
+        });
+        if browse_clicked {
+            handle_setup_browse(app, &ctx);
+        }
+    }
 
-        ui.vertical_centered(|ui| {
-            if ui.button("Browse...").clicked() {
-                browse_clicked = true;
+    #[cfg(target_arch = "wasm32")]
+    {
+        let in_flight = app.rt.web_data_rx.is_some();
+        // Snapshot progress so the body closure doesn't borrow `app`.
+        let progress = app
+            .rt
+            .web_data_progress
+            .as_ref()
+            .map(|p| (p.label(), p.fraction(), p.received_bytes(), p.total_bytes()));
+        let mut retry_clicked = false;
+
+        splash_card(ui, app.editor_icon.as_ref(), |ui| {
+            if in_flight {
+                let (label, frac, received, total) =
+                    progress.unwrap_or_else(|| ("Downloading game data".to_string(), None, 0, 0));
+                ui.label(label);
+                ui.add_space(8.0);
+                let bar = match frac {
+                    Some(f) => egui::ProgressBar::new(f).show_percentage(),
+                    None => egui::ProgressBar::new(0.0).animate(true),
+                };
+                ui.add(bar);
+                if total > 0 {
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new(format!("{} / {}", fmt_mb(received), fmt_mb(total)))
+                            .weak()
+                            .size(12.0),
+                    );
+                }
+                ui.ctx().request_repaint();
+            } else if let Some(msg) = error_msg.as_deref() {
+                ui.label("Couldn't download the Warzone 2100 data.");
+                ui.add_space(10.0);
+                ui.colored_label(egui::Color32::from_rgb(220, 80, 80), msg);
+                ui.add_space(12.0);
+                ui.vertical_centered(|ui| {
+                    if ui.button("Retry").clicked() {
+                        retry_clicked = true;
+                    }
+                });
+            } else {
+                ui.label("Preparing Warzone 2100 data...");
+                ui.add_space(8.0);
+                ui.add(egui::ProgressBar::new(0.0).animate(true));
+                ui.ctx().request_repaint();
             }
         });
 
-        if let Some(msg) = error_msg.as_deref() {
-            ui.add_space(10.0);
-            ui.colored_label(egui::Color32::from_rgb(220, 80, 80), msg);
+        if retry_clicked {
+            crate::web_data::begin_load(app, &ctx);
         }
-    });
-
-    if browse_clicked {
-        handle_setup_browse(app, &ctx);
     }
+}
+
+/// Human-readable megabyte size for the download readout.
+#[cfg(target_arch = "wasm32")]
+fn fmt_mb(bytes: u64) -> String {
+    format!("{:.1} MB", bytes as f64 / 1_000_000.0)
 }
 
 /// Validate the user's directory pick and either transition into Loading
 /// or stash an error on the Setup phase.
+#[cfg(not(target_arch = "wasm32"))]
 fn handle_setup_browse(app: &mut EditorApp, ctx: &egui::Context) {
     let Some(dir) = rfd::FileDialog::new()
         .set_title("Select WZ2100 Data Directory")
@@ -335,7 +399,7 @@ fn show_thumbnail_tasks(ui: &mut egui::Ui, app: &EditorApp, above_thumbnails_don
     }
 }
 
-fn splash_task_done(ui: &mut egui::Ui, label: &str) {
+pub(crate) fn splash_task_done(ui: &mut egui::Ui, label: &str) {
     ui.horizontal(|ui| {
         ui.allocate_ui_with_layout(
             egui::vec2(SPLASH_ICON_WIDTH, ui.spacing().interact_size.y),
@@ -366,7 +430,7 @@ pub(crate) fn splash_task_progress(ui: &mut egui::Ui, label: &str, frac: Option<
     });
 }
 
-fn splash_task_pending(ui: &mut egui::Ui, label: &str) {
+pub(crate) fn splash_task_pending(ui: &mut egui::Ui, label: &str) {
     ui.horizontal(|ui| {
         ui.allocate_space(egui::vec2(SPLASH_ICON_WIDTH, ui.spacing().interact_size.y));
         ui.label(label);

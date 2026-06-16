@@ -364,10 +364,11 @@ impl ViewshedSettings {
     }
 }
 
-pub use crate::startup::{
-    GroundTextureLoadState, GroundTexturePayload, GroundUploadViews, MapModelLoadState,
-    RuntimeTasks,
-};
+pub use crate::startup::{MapModelLoadState, RuntimeTasks};
+// The ground texture-array decode/upload state is native-only; the web build
+// publishes ground metadata directly without it.
+#[cfg(not(target_arch = "wasm32"))]
+pub use crate::startup::{GroundTextureLoadState, GroundTexturePayload, GroundUploadViews};
 
 pub use crate::startup::pipeline::StartupPhase;
 

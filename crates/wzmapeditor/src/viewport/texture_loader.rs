@@ -3,9 +3,11 @@
 //! All public functions in this module are safe to call from background threads.
 //! They perform file I/O and image decoding but hold no GPU state.
 
+#[cfg(not(target_arch = "wasm32"))]
 use super::ground_types::GroundTexture;
 
 /// Decal texture resolution (per-tile). Native 256px from high.wz KTX2.
+#[cfg(not(target_arch = "wasm32"))]
 pub const DECAL_TEX_SIZE: u32 = 256;
 
 /// Alpha channel threshold for classifying a tile as a decal (has transparency).
@@ -13,6 +15,7 @@ pub const DECAL_TEX_SIZE: u32 = 256;
 /// 250 (not 255) tolerates near-opaque pixels (alpha 251-254) caused by
 /// compression and antialiasing in the source PNGs. Those should not count
 /// as genuine transparency.
+#[cfg(not(target_arch = "wasm32"))]
 const DECAL_ALPHA_THRESHOLD: u8 = 250;
 
 /// Load all ground type textures into a flat RGBA buffer (background-thread safe).
@@ -117,6 +120,7 @@ pub fn load_decal_normal_specular_data(
 ///
 /// Missing layers are filled with a default pixel: flat normal `(128,128,255,255)`
 /// for `_nm` suffix, black `(0,0,0,255)` for `_sm`.
+#[cfg(not(target_arch = "wasm32"))]
 fn assemble_texture_array_with_default(
     results: Vec<Option<Vec<u8>>>,
     tex_size: u32,

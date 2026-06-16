@@ -29,20 +29,30 @@ pub(crate) const PIE_SEARCH_DIRS: &[&str] = &[
     "mp/components",
 ];
 
-/// Find a PIE file by name under `data_dir`. Walks the known-dirs list
-/// first, then falls back to a depth-limited recursive search rooted at
-/// `base/` and `mp/`.
-pub(crate) fn find_pie_file(data_dir: &Path, imd_name: &str) -> Option<PathBuf> {
+/// Find a PIE file by name under `data_dir`. Consults the prebuilt index
+/// first, then the known-dirs list, then a depth-limited recursive search
+/// rooted at `base/` and `mp/`.
+///
+/// The index resolves the common case in O(1); the directory probes remain
+/// as a safety net for any file the index did not record.
+pub(crate) fn find_pie_file(
+    assets: &dyn AssetSource,
+    file_index: &HashMap<String, PathBuf>,
+    imd_name: &str,
+) -> Option<PathBuf> {
+    if let Some(found) = lookup_in_index(file_index, imd_name) {
+        return Some(found.clone());
+    }
+
     for dir in PIE_SEARCH_DIRS {
-        let path = data_dir.join(dir).join(imd_name);
-        if path.exists() {
-            return Some(path);
+        let rel = Path::new(dir).join(imd_name);
+        if assets.exists(&rel) {
+            return Some(rel);
         }
     }
 
     for subdir in ["base", "mp"] {
-        let search_root = data_dir.join(subdir);
-        if let Some(found) = find_file_recursive(&search_root, imd_name) {
+        if let Some(found) = find_file_recursive(assets, Path::new(subdir), imd_name) {
             return Some(found);
         }
     }

@@ -147,6 +147,13 @@ pub struct EditorApp {
     /// Modal shown when a user-initiated `.wz` open or drag-drop fails.
     pub load_error_dialog: LoadErrorDialog,
     /// Text-edit buffer for the install-directory field on the Settings → Game page.
+    #[cfg_attr(
+        target_arch = "wasm32",
+        expect(
+            dead_code,
+            reason = "the WZ data-directory picker is native-only; the web build ships its data"
+        )
+    )]
     pub settings_install_dir_text: String,
     /// Text-edit buffer for the test-game executable field on Settings → Game.
     pub settings_wz_exe_text: String,
@@ -809,6 +816,36 @@ impl eframe::App for EditorApp {
         // request_repaint, so we don't need a fallback slow tick.
         self.window_focused = ctx.input(|i| i.focused);
 
+        // The web build downloads its data archives asynchronously. Auto-start
+        // the download on first run and poll its channel here (before the
+        // non-Ready early return) so a completed fetch injects the asset source
+        // and advances the launcher.
+        #[cfg(target_arch = "wasm32")]
+        {
+            crate::web_data::poll_web_data(self, ctx);
+            if matches!(self.startup_phase, StartupPhase::Setup { .. })
+                && !self.rt.web_data_load_started
+            {
+                crate::web_data::begin_load(self, ctx);
+            }
+        }
+        // Drain a completed web "Open .wz" pick; only reachable once Ready, but
+        // a no-op when its channel is empty, so polling here is harmless.
+        #[cfg(target_arch = "wasm32")]
+        crate::web_map_io::poll(self, ctx);
+
+        #[cfg(target_arch = "wasm32")]
+        crate::web_data::poll_high_upload(self, ctx);
+
+        // The Remastered (HQ) terrain option is selectable only once the pack
+        // is installed AND the browser-side transcoder has finished loading
+        // (the latter lags the upload, so this is re-evaluated every frame).
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.has_hq_textures = self.rt.web_vfs.as_ref().is_some_and(|v| v.has_high())
+                && crate::viewport::basis::is_ready();
+        }
+
         if !matches!(self.startup_phase, StartupPhase::Ready) {
             if matches!(self.startup_phase, StartupPhase::Loading { .. }) {
                 crate::startup::workers::poll_startup_loads(ctx, self);
@@ -907,6 +944,30 @@ fn auto_load_assets(ctx: &egui::Context, app: &mut EditorApp) {
     let extracting = app.rt.extraction_progress.is_some();
 
     if !extracting && app.config.data_dir.is_some() {
+        // The web build runs these loaders inline on the single browser thread,
+        // so drive at most one heavy step per frame. Returning after each lets
+        // the loading overlay repaint between steps instead of the tab freezing
+        // for the whole sequence on one frame.
+        #[cfg(target_arch = "wasm32")]
+        {
+            if app.tileset.is_none() && !app.rt.tileset_load_attempted {
+                app.rt.tileset_load_attempted = true;
+                app.try_load_tileset(ctx);
+                ctx.request_repaint();
+                return;
+            }
+            if app.stats.is_none() && !app.rt.stats_load_attempted {
+                app.try_load_stats(ctx);
+                ctx.request_repaint();
+                return;
+            }
+            if app.tileset.is_some() && app.ground_data.is_none() {
+                app.start_ground_data_load();
+                ctx.request_repaint();
+                return;
+            }
+        }
+
         if app.tileset.is_none() && !app.rt.tileset_load_attempted {
             app.rt.tileset_load_attempted = true;
             app.try_load_tileset(ctx);

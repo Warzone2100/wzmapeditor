@@ -300,40 +300,52 @@ fn relaunch_editor(ctx: &egui::Context) {
 const WZ_CONFIG_DIR_HINT: &str = "Find this by opening Warzone 2100, going to Options, \
                                   and clicking 'Open Configuration Directory'.";
 
+#[cfg_attr(
+    target_arch = "wasm32",
+    expect(
+        unused_variables,
+        reason = "ctx drives the native-only data-directory and test-game controls"
+    )
+)]
 fn show_game_settings(ui: &mut Ui, ctx: &egui::Context, app: &mut EditorApp) {
     ui.heading("Game");
     ui.label(RichText::new("Paths used to load assets and launch test games.").weak());
     ui.add_space(8.0);
 
-    ui.label(RichText::new("WZ Data Directory").strong());
-    ui.add_space(2.0);
-    ui.horizontal(|ui| {
-        let resp = ui.add(
-            egui::TextEdit::singleline(&mut app.settings_install_dir_text)
-                .desired_width(360.0)
-                .hint_text("/path/to/warzone2100"),
-        );
-        if resp.lost_focus() {
-            commit_install_dir(app, ctx);
-        }
-        if ui.button("Browse...").clicked()
-            && let Some(dir) = rfd::FileDialog::new()
-                .set_title("Select WZ2100 Data Directory")
-                .pick_folder()
-        {
-            app.settings_install_dir_text = dir.display().to_string();
-            crate::ui::actions::apply_data_directory(app, ctx, dir);
-        }
-        if app.config.game_install_dir.is_some() && ui.button("Clear").clicked() {
-            app.config.game_install_dir = None;
-            app.settings_install_dir_text.clear();
-            app.config.save();
-        }
-    });
+    // The web build ships its game data, so there is no data-directory to
+    // pick; this section is native-only.
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        ui.label(RichText::new("WZ Data Directory").strong());
+        ui.add_space(2.0);
+        ui.horizontal(|ui| {
+            let resp = ui.add(
+                egui::TextEdit::singleline(&mut app.settings_install_dir_text)
+                    .desired_width(360.0)
+                    .hint_text("/path/to/warzone2100"),
+            );
+            if resp.lost_focus() {
+                commit_install_dir(app, ctx);
+            }
+            if ui.button("Browse...").clicked()
+                && let Some(dir) = rfd::FileDialog::new()
+                    .set_title("Select WZ2100 Data Directory")
+                    .pick_folder()
+            {
+                app.settings_install_dir_text = dir.display().to_string();
+                crate::ui::actions::apply_data_directory(app, ctx, dir);
+            }
+            if app.config.game_install_dir.is_some() && ui.button("Clear").clicked() {
+                app.config.game_install_dir = None;
+                app.settings_install_dir_text.clear();
+                app.config.save();
+            }
+        });
 
-    ui.add_space(14.0);
-    ui.separator();
-    ui.add_space(8.0);
+        ui.add_space(14.0);
+        ui.separator();
+        ui.add_space(8.0);
+    }
 
     ui.label(RichText::new("Test-game executable").strong());
     ui.add_space(2.0);
@@ -446,6 +458,7 @@ fn show_game_settings(ui: &mut Ui, ctx: &egui::Context, app: &mut EditorApp) {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn commit_install_dir(app: &mut EditorApp, ctx: &egui::Context) {
     let trimmed = app.settings_install_dir_text.trim();
     if trimmed.is_empty() {

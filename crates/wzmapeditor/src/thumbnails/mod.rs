@@ -8,6 +8,8 @@
 mod cache;
 mod generator;
 mod preload;
+#[cfg(target_arch = "wasm32")]
+mod web_cache;
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -37,6 +39,9 @@ const PRELOAD_FRAME_BUDGET_MS_EDITOR: u128 = 12;
 
 /// Bump this when the rendering pipeline changes (shaders, lighting, camera
 /// angle, clear color, `TCMask`, composite logic) to force re-generation.
+///
+/// Persisted thumbnails key off this: the native disk cache and the web
+/// Cache Storage both version their entries by it.
 pub(crate) const CACHE_VERSION: u32 = 5;
 
 /// Tileset index (for `ModelLoader::set_tileset`) by name.
@@ -60,6 +65,13 @@ pub enum PreloadState {
     /// weapons, turrets) and assembled composites (structures, features,
     /// droid templates) are bundled into one queue so the user sees a
     /// single progress bar rather than several flickering tasks.
+    #[cfg_attr(
+        target_arch = "wasm32",
+        expect(
+            dead_code,
+            reason = "web skips the eager preload that constructs this state"
+        )
+    )]
     Rendering {
         work: Vec<PreloadItem>,
         done: usize,
@@ -113,6 +125,21 @@ pub struct ThumbnailCache {
     /// renderer (freeing it while the gpu pass is in-flight triggers an
     /// `egui_texid` shutdown panic).
     pub preview_texture_id: Option<egui::TextureId>,
+    /// Thumbnail GPU-to-CPU readbacks awaiting completion.
+    ///
+    /// A single staging buffer backs all readbacks, so this holds at most
+    /// one in-flight entry; [`ThumbnailCache::tick_readbacks`] drains
+    /// completed entries each frame and routes the pixels to the texture
+    /// cache and disk.
+    pub(crate) pending_readbacks: Vec<cache::PendingReadback>,
+    /// Thumbnails decoded from the browser Cache Storage, delivered across
+    /// frames into [`Self::textures`] so the web build reuses generated
+    /// thumbnails instead of re-rendering them every session.
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) web_thumb_rx: Option<std::sync::mpsc::Receiver<(String, egui::ColorImage)>>,
+    /// Tileset whose cached thumbnails the async loader has been started for.
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) web_thumb_loaded_tileset: Option<String>,
 }
 
 impl Default for ThumbnailCache {
@@ -128,6 +155,11 @@ impl Default for ThumbnailCache {
             pending_tilesets: Vec::new(),
             active_tileset: "arizona".to_string(),
             preview_texture_id: None,
+            pending_readbacks: Vec::new(),
+            #[cfg(target_arch = "wasm32")]
+            web_thumb_rx: None,
+            #[cfg(target_arch = "wasm32")]
+            web_thumb_loaded_tileset: None,
         }
     }
 }
@@ -139,11 +171,49 @@ impl ThumbnailCache {
         self.load_budget = 0;
     }
 
-    /// Whether this frame's thumbnail-render budget is exhausted. Callers
-    /// use this to schedule another repaint so any remaining work continues
-    /// next frame.
+    /// Whether more thumbnail work is outstanding: either this frame's
+    /// render budget is exhausted, or a readback is still in flight. Callers
+    /// use this to schedule another repaint so the work completes next frame.
     pub fn has_pending(&self) -> bool {
-        self.frame_budget >= THUMBNAILS_PER_FRAME
+        self.frame_budget >= THUMBNAILS_PER_FRAME || !self.pending_readbacks.is_empty()
+    }
+
+    /// Per-frame web thumbnail-cache pump: start the async load of the current
+    /// tileset's cached thumbnails once, then drain decoded entries into the
+    /// in-memory texture map so `cache_lookup` resolves them without a render.
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn web_thumb_tick(&mut self, ctx: &egui::Context) {
+        if self.web_thumb_loaded_tileset.as_deref() != Some(self.current_tileset.as_str()) {
+            self.web_thumb_loaded_tileset = Some(self.current_tileset.clone());
+            let (tx, rx) = std::sync::mpsc::channel();
+            self.web_thumb_rx = Some(rx);
+            web_cache::start_load(self.current_tileset.clone(), tx, ctx.clone());
+        }
+
+        let mut received = Vec::new();
+        let mut loader_finished = false;
+        if let Some(rx) = &self.web_thumb_rx {
+            loop {
+                match rx.try_recv() {
+                    Ok(item) => received.push(item),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        loader_finished = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if loader_finished {
+            self.web_thumb_rx = None;
+        }
+        for (key, image) in received {
+            if self.textures.contains_key(&key) || self.failed.contains(&key) {
+                continue;
+            }
+            let tex = ctx.load_texture(format!("thumb_{key}"), image, egui::TextureOptions::LINEAR);
+            self.textures.insert(key, tex);
+        }
     }
 }
 

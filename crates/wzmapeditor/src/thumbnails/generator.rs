@@ -172,7 +172,7 @@ impl ThumbnailCache {
         // The designer's live preview is volatile: never cache to disk and
         // always allow a re-render. The buffer hash invalidates the
         // in-memory texture elsewhere.
-        let is_preview = template_key == "__designer_preview__";
+        let is_preview = template_key == crate::designer::tabs::PREVIEW_ID;
         match self.cache_lookup(ctx, &cache_key, !is_preview) {
             CacheLookup::Resolved => return self.textures.get(&cache_key),
             CacheLookup::Failed => return None,

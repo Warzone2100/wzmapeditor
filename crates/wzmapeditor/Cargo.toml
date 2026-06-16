@@ -83,6 +83,9 @@ mimalloc = { version = "0.1", features = ["v2"] }
 
 [dev-dependencies]
 tempfile = "3"
+# Used only by `assets::web` tests to assemble in-memory `.wz` fixtures; the
+# production VFS reads through `wz-maplib`, so this never enters the wasm build.
+zip = { workspace = true }
 
 [lints]
 workspace = true

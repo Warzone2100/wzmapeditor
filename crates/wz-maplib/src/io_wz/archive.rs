@@ -501,6 +501,23 @@ impl<R: std::io::Read + std::io::Seek> WzArchiveReader<R> {
         std::io::Read::read_to_end(&mut entry, &mut buf).ok()?;
         Some(buf)
     }
+
+    /// Names of every entry, in central-directory order.
+    ///
+    /// Directory entries (names ending in `/`) are returned as stored. Use
+    /// this to enumerate an archive's layout without reading entry bodies.
+    pub fn entry_names(&self) -> Vec<String> {
+        self.archive.file_names().map(str::to_owned).collect()
+    }
+}
+
+impl WzArchiveReader<std::fs::File> {
+    /// Open a `.wz` archive from a path for batch reading.
+    ///
+    /// Returns `None` if the file cannot be opened or is not a valid zip.
+    pub fn open(wz_path: &Path) -> Option<Self> {
+        Self::from_reader(std::fs::File::open(wz_path).ok()?)
+    }
 }
 
 #[cfg(test)]

@@ -12,6 +12,11 @@ use std::path::{Path, PathBuf};
 mod native;
 pub(crate) use native::FsAssetSource;
 
+#[cfg(any(target_arch = "wasm32", test))]
+mod web;
+#[cfg(target_arch = "wasm32")]
+pub(crate) use web::{WebDataArchives, WebVfsAssetSource};
+
 /// Read-only access to game-asset bytes by data-root-relative path.
 ///
 /// Implementations own the data root; callers pass relative paths and never

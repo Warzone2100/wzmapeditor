@@ -32,7 +32,14 @@ mod ui;
 mod update_check;
 mod viewport;
 mod viewshed;
+#[cfg(target_arch = "wasm32")]
+mod web;
+#[cfg(target_arch = "wasm32")]
+mod web_data;
+#[cfg(target_arch = "wasm32")]
+mod web_map_io;
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result {
     // Create the Output-panel channel before installing the logger so
     // editor-crate warnings/errors emitted during startup are captured and

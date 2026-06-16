@@ -25,6 +25,15 @@
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#909090" />
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#404040" />
 
+    <!-- The editor handles right-clicks itself (camera rotate, tool secondary
+         actions), so the browser's native context menu is never wanted. eframe
+         suppresses it on the canvas, but only when it can lock the app runner,
+         so it leaks on a right-button release during a camera drag. This
+         capture-phase listener has no such gate. -->
+    <script>
+        addEventListener("contextmenu", function (e) { e.preventDefault(); }, true);
+    </script>
+
     <style>
         html,
         body {

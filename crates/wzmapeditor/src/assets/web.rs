@@ -12,10 +12,17 @@
 //!
 //! Archive entries carry no `base/` or `mp/` prefix internally (they are
 //! `texpages/...`, `stats/...`, and so on), so the leading prefix selects the
+//! archive and is stripped before lookup.
+//!
+//! `high.wz` (the high-quality KTX2 terrain pack) is an optional overlay on the
+//! `base/` prefix, just like `classic.wz`. Unlike the other archives it is
+//! uploaded by the user after startup, so it lives behind interior mutability
+//! and can be installed at any time via [`WebVfsAssetSource::set_high_archive`].
 
 use std::collections::BTreeSet;
 use std::io::Cursor;
 use std::path::{Component, Path, PathBuf};
+use std::sync::{Mutex, RwLock};
 
 use wz_maplib::io_wz::WzArchiveReader;
 
@@ -32,6 +39,9 @@ pub(crate) struct WebDataArchives {
     pub classic: Option<Vec<u8>>,
     /// `mp.wz` bytes, mapped to the `mp/` prefix.
     pub mp: Option<Vec<u8>>,
+    /// `high.wz` (HQ KTX2 terrain) bytes, overlaid on the `base/` prefix when a
+    /// cached upload is available at startup.
+    pub high: Option<Vec<u8>>,
 }
 
 /// One editor prefix (`base` or `mp`) backed by one or more overlaid archives.
@@ -113,18 +123,58 @@ impl Layer {
 pub(crate) struct WebVfsAssetSource {
     base: Layer,
     mp: Option<Layer>,
+    /// HQ KTX2 terrain overlay (`high.wz`), layered over the `base/` prefix.
+    /// Uploaded after startup, so it sits behind a lock; entries here win over
+    /// `base`/`classic`.
+    high: RwLock<Option<Layer>>,
 }
 
 impl WebVfsAssetSource {
     /// Build a source from in-memory `.wz` archive bytes.
     ///
     /// `base` is mandatory; `classic` (when present) overlays the `base/`
+    /// prefix and `mp` backs the `mp/` prefix. `high` (when present) overlays
+    /// the `base/` prefix above `classic`. Invalid optional archives are skipped
+    /// with the rest still usable. Returns `None` only when `base` is not a
+    /// valid zip archive.
     pub(crate) fn from_archives(archives: WebDataArchives) -> Option<Self> {
+        let WebDataArchives {
+            base,
+            classic,
+            mp,
+            high,
+        } = archives;
         let mut base = Layer::new(open_reader(base)?);
         if let Some(classic) = classic.and_then(open_reader) {
             base.overlay(classic);
         }
         let mp = mp.and_then(open_reader).map(Layer::new);
+        let high = RwLock::new(high.and_then(open_reader).map(Layer::new));
+        Some(Self { base, mp, high })
+    }
+
+    /// Install (or replace) the `high.wz` overlay from archive bytes.
+    ///
+    /// Returns `true` when the bytes parsed as a valid archive. Callable through
+    /// a shared handle: the editor uploads `high.wz` after the VFS is already
+    /// live behind an `Arc`.
+    pub(crate) fn set_high_archive(&self, bytes: Vec<u8>) -> bool {
+        match open_reader(bytes) {
+            Some(reader) => {
+                if let Ok(mut high) = self.high.write() {
+                    *high = Some(Layer::new(reader));
+                    true
+                } else {
+                    false
+                }
+            }
+            None => false,
+        }
+    }
+
+    /// Whether an HQ terrain overlay is currently installed.
+    pub(crate) fn has_high(&self) -> bool {
+        self.high.read().is_ok_and(|h| h.is_some())
     }
 
     fn layer(&self, head: &str) -> Option<&Layer> {
@@ -134,6 +184,16 @@ impl WebVfsAssetSource {
             _ => None,
         }
     }
+
+    /// Run `f` against the HQ overlay layer when one is installed and `head`
+    /// addresses the `base/` prefix it overlays.
+    fn with_high<T>(&self, head: &str, f: impl FnOnce(&Layer) -> Option<T>) -> Option<T> {
+        if head != "base" {
+            return None;
+        }
+        let guard = self.high.read().ok()?;
+        f(guard.as_ref()?)
+    }
 }
 
 impl AssetSource for WebVfsAssetSource {
@@ -142,13 +202,30 @@ impl AssetSource for WebVfsAssetSource {
         if tail.is_empty() {
             return None;
         }
+        if let Some(bytes) = self.with_high(&head, |layer| layer.read(&tail)) {
+            return Some(bytes);
+        }
         self.layer(&head)?.read(&tail)
     }
 
     fn exists(&self, rel: &Path) -> bool {
+        let Some((head, tail)) = split_key(rel) else {
+            return false;
+        };
+        if self.with_high(&head, |layer| layer.exists(&tail).then_some(())) == Some(()) {
+            return true;
+        }
+        self.layer(&head).is_some_and(|layer| layer.exists(&tail))
     }
 
     fn is_dir(&self, rel: &Path) -> bool {
+        let Some((head, tail)) = split_key(rel) else {
+            return false;
+        };
+        if self.with_high(&head, |layer| layer.is_dir(&tail).then_some(())) == Some(()) {
+            return true;
+        }
+        self.layer(&head).is_some_and(|layer| layer.is_dir(&tail))
     }
 
     fn read_dir(&self, rel: &Path) -> Vec<PathBuf> {
@@ -158,6 +235,11 @@ impl AssetSource for WebVfsAssetSource {
         let Some(layer) = self.layer(&head) else {
             return Vec::new();
         };
+        let mut children = layer.children(&tail);
+        if let Some(high_children) = self.with_high(&head, |layer| Some(layer.children(&tail))) {
+            children.extend(high_children);
+        }
+        children
             .into_iter()
             .map(|child| {
                 let mut path = PathBuf::from(&head);
@@ -233,6 +315,7 @@ mod tests {
             base,
             classic: Some(classic),
             mp: Some(mp),
+            high: None,
         })
         .expect("valid base archive")
     }
@@ -274,6 +357,53 @@ mod tests {
             vfs.bytes(Path::new("base/texpages/page-1.png")).as_deref(),
             Some(&b"base-page"[..])
         );
+    }
+
+    #[test]
+    fn high_overlay_wins_and_adds_entries() {
+        let vfs = sample();
+        assert!(!vfs.has_high());
+
+        let high = zip_with(&[
+            ("texpages/tile.png", b"high-tile"),
+            ("texpages/hq-only.ktx2", b"hq"),
+        ]);
+        assert!(vfs.set_high_archive(high));
+        assert!(vfs.has_high());
+
+        assert_eq!(
+            vfs.bytes(Path::new("base/texpages/tile.png")).as_deref(),
+            Some(&b"high-tile"[..])
+        );
+        assert_eq!(
+            vfs.bytes(Path::new("base/texpages/hq-only.ktx2"))
+                .as_deref(),
+            Some(&b"hq"[..])
+        );
+        assert!(vfs.exists(Path::new("base/texpages/hq-only.ktx2")));
+        assert_eq!(
+            vfs.bytes(Path::new("base/texpages/page-1.png")).as_deref(),
+            Some(&b"base-page"[..])
+        );
+        let mut texpages = vfs.read_dir(Path::new("base/texpages"));
+        texpages.sort();
+        assert_eq!(
+            texpages,
+            vec![
+                PathBuf::from("base/texpages/hq-only.ktx2"),
+                PathBuf::from("base/texpages/page-1.png"),
+                PathBuf::from("base/texpages/tile.png"),
+            ]
+        );
+        // The HQ overlay only affects the `base/` prefix.
+        assert!(vfs.with_high("mp", |_| Some(())).is_none());
+    }
+
+    #[test]
+    fn set_high_archive_rejects_invalid_zip() {
+        let vfs = sample();
+        assert!(!vfs.set_high_archive(b"not a zip".to_vec()));
+        assert!(!vfs.has_high());
     }
 
     #[test]

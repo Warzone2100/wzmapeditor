@@ -1264,6 +1264,10 @@ fn show_ui_panels(ui: &mut egui::Ui, app: &mut EditorApp) {
 
     let ctx = ui.ctx().clone();
     designer::update_designer(app, &ctx);
+
+    // Non-blocking overlay shown while an uploaded `high.wz` is being read.
+    #[cfg(target_arch = "wasm32")]
+    crate::web_data::draw_high_upload_progress(app, &ctx);
 }
 
 #[cfg(test)]

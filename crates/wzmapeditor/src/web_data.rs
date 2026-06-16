@@ -146,6 +146,13 @@ pub(crate) fn poll_web_data(app: &mut EditorApp, ctx: &egui::Context) {
     };
     app.rt.web_data_progress = None;
     match outcome {
+        Ok(archives) => {
+            apply(app, archives);
+            // A cached HQ pack restored at startup: start loading the transcoder.
+            if app.rt.web_vfs.as_ref().is_some_and(|vfs| vfs.has_high()) {
+                crate::viewport::basis::ensure_initialized(ctx);
+            }
+        }
         Err(msg) => set_setup_error(app, &msg),
     }
 }
@@ -396,6 +403,12 @@ pub(crate) fn poll_high_upload(app: &mut EditorApp, ctx: &egui::Context) {
     };
     app.rt.web_high_progress = None;
     match outcome {
+        Ok(bytes) => {
+            if install_high(app, bytes) {
+                // Warm up the transcoder now so HQ is ready to select shortly.
+                crate::viewport::basis::ensure_initialized(ctx);
+            }
+        }
         Err(msg) => {
             log::warn!("{msg}");
             app.log(msg);
@@ -403,13 +416,24 @@ pub(crate) fn poll_high_upload(app: &mut EditorApp, ctx: &egui::Context) {
     }
 }
 
+fn install_high(app: &mut EditorApp, bytes: Vec<u8>) -> bool {
     let Some(vfs) = app.rt.web_vfs.as_ref() else {
         app.log("Cannot install HQ terrain: data source not ready.".to_string());
+        return false;
     };
     if vfs.set_high_archive(bytes) {
+        // A new pack invalidates any in-flight or completed HQ decode; re-arm
+        // it and force the next decode to bypass (and overwrite) cached layers
+        // from a previous pack.
+        app.rt.web_ground_decode = None;
+        app.rt.web_hq_prefetch = None;
+        app.rt.web_hq_loaded_tileset = None;
+        app.rt.web_hq_skip_cache = true;
         app.log("High-quality terrain pack loaded.".to_string());
+        true
     } else {
         app.log("Uploaded high.wz is not a valid archive.".to_string());
+        false
     }
 }
 
@@ -434,7 +458,10 @@ async fn stream_file(file: &web_sys::File, progress: &WebFetchProgress) -> Resul
 /// Store the uploaded `high.wz` bytes in Cache Storage. Best-effort: a failure
 /// only costs a re-upload next session, so errors are swallowed.
 async fn cache_uploaded_high(bytes: &[u8]) {
+    let mib = bytes.len() / (1024 * 1024);
     let Some(cache) = cache::open(CACHE_NAME).await else {
+        return;
+    };
     if cache::put_bytes(&cache, HIGH_WZ_CACHE_KEY, bytes.to_vec()).await {
         log::info!("Cached high.wz ({mib} MiB); it will be restored on reload.");
     } else {

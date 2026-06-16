@@ -2,6 +2,8 @@
 
 pub mod atlas;
 pub mod atlas_gpu;
+#[cfg(target_arch = "wasm32")]
+pub mod basis;
 pub mod camera;
 pub mod ground_types;
 pub mod lightmap;

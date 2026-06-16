@@ -13,6 +13,14 @@ pub mod workers;
 use std::collections::HashMap;
 use std::sync::mpsc;
 
+/// Tileset being prefetched, paired with the channel that delivers its cached
+/// decoded HQ layers (`filename -> RGBA bytes`) once.
+#[cfg(target_arch = "wasm32")]
+type HqPrefetch = (
+    crate::config::Tileset,
+    mpsc::Receiver<HashMap<String, Vec<u8>>>,
+);
+
 /// All in-flight background loading state for startup and mid-session reloads.
 pub struct RuntimeTasks {
     /// Extraction progress in thousandths (0-1000) while base.wz extracts.
@@ -33,6 +41,59 @@ pub struct RuntimeTasks {
     pub stats_load_attempted: bool,
     /// Latches once attempted, so we don't retry every frame.
     pub tileset_load_attempted: bool,
+    /// Delivers the downloaded `.wz` bytes, or an error message when the
+    /// fetch fails.
+    #[cfg(target_arch = "wasm32")]
+    pub web_data_rx: Option<mpsc::Receiver<Result<crate::assets::WebDataArchives, String>>>,
+    /// Live byte progress of the in-flight data download, for the launcher.
+    #[cfg(target_arch = "wasm32")]
+    pub web_data_progress: Option<std::sync::Arc<crate::web_data::WebFetchProgress>>,
+    /// One-shot latch: set true when the auto-download first starts so the
+    /// per-frame auto-trigger doesn't re-fire. Retrying after a failure goes
+    /// through the setup card's button, which calls `begin_load` directly, so
+    /// this flag is never reset.
+    #[cfg(target_arch = "wasm32")]
+    pub web_data_load_started: bool,
+    /// Delivers the bytes of a `.wz` map the user picks via the web file
+    /// `<input>`, or an error message when the read fails.
+    #[cfg(target_arch = "wasm32")]
+    pub web_open_map_rx: Option<mpsc::Receiver<Result<crate::web_map_io::PickedMap, String>>>,
+    /// Concrete handle to the in-memory VFS, kept so an uploaded `high.wz` can
+    /// be installed after the source is already live behind `EditorApp::assets`.
+    #[cfg(target_arch = "wasm32")]
+    pub web_vfs: Option<std::sync::Arc<crate::assets::WebVfsAssetSource>>,
+    /// Delivers the uploaded `high.wz` bytes once read + cached, or an error.
+    #[cfg(target_arch = "wasm32")]
+    pub web_high_rx: Option<mpsc::Receiver<Result<Vec<u8>, String>>>,
+    /// Live byte progress of the in-flight `high.wz` upload, for the UI.
+    #[cfg(target_arch = "wasm32")]
+    pub web_high_progress: Option<std::sync::Arc<crate::web_data::WebFetchProgress>>,
+    /// In-flight frame-budgeted decode of the Remastered (HQ) ground/decal
+    /// texture arrays. The browser has no worker thread, so the arrays decode
+    /// a few layers per frame before the shared upload state machine runs.
+    #[cfg(target_arch = "wasm32")]
+    pub web_ground_decode: Option<crate::app::web_ground::WebGroundDecode>,
+    /// Tileset whose HQ arrays have been decoded, so the decode isn't
+    /// retriggered every frame. A tileset switch changes `current_tileset`,
+    /// which no longer matches and re-arms the decode.
+    #[cfg(target_arch = "wasm32")]
+    pub web_hq_loaded_tileset: Option<crate::config::Tileset>,
+    /// In-flight prefetch of cached decoded HQ layers for a tileset. Delivers a
+    /// `filename -> RGBA bytes` map once; layers present here skip the
+    /// transcode, the rest decode and are cached as they finish.
+    #[cfg(target_arch = "wasm32")]
+    pub web_hq_prefetch: Option<HqPrefetch>,
+    /// Set when a fresh `high.wz` is uploaded: the next HQ arm skips the cache
+    /// prefetch and decodes from scratch, overwriting any layers cached from a
+    /// previous pack. One-shot.
+    #[cfg(target_arch = "wasm32")]
+    pub web_hq_skip_cache: bool,
+    /// Latches true once the initial web load (Classic terrain, stats, and --
+    /// when Remastered is selected -- the HQ ground decode) has completed once,
+    /// permanently dismissing the full-screen loading overlay. Later
+    /// mid-session reloads use the compact bottom-left indicator instead.
+    #[cfg(target_arch = "wasm32")]
+    pub web_initial_load_done: bool,
 }
 
 impl RuntimeTasks {
@@ -49,6 +110,30 @@ impl RuntimeTasks {
             map_model_load: None,
             stats_load_attempted: false,
             tileset_load_attempted: false,
+            #[cfg(target_arch = "wasm32")]
+            web_data_rx: None,
+            #[cfg(target_arch = "wasm32")]
+            web_data_progress: None,
+            #[cfg(target_arch = "wasm32")]
+            web_data_load_started: false,
+            #[cfg(target_arch = "wasm32")]
+            web_open_map_rx: None,
+            #[cfg(target_arch = "wasm32")]
+            web_vfs: None,
+            #[cfg(target_arch = "wasm32")]
+            web_high_rx: None,
+            #[cfg(target_arch = "wasm32")]
+            web_high_progress: None,
+            #[cfg(target_arch = "wasm32")]
+            web_ground_decode: None,
+            #[cfg(target_arch = "wasm32")]
+            web_hq_loaded_tileset: None,
+            #[cfg(target_arch = "wasm32")]
+            web_hq_prefetch: None,
+            #[cfg(target_arch = "wasm32")]
+            web_hq_skip_cache: false,
+            #[cfg(target_arch = "wasm32")]
+            web_initial_load_done: false,
         }
     }
 

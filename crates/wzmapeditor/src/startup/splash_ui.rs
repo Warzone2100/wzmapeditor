@@ -335,6 +335,133 @@ fn show_loading_card(ui: &mut egui::Ui, app: &EditorApp) {
     ctx.request_repaint();
 }
 
+/// Full-screen web loading splash, shown after the data download completes but
+/// while stats, terrain, and -- when Remastered is selected -- the HQ ground
+/// decode are still streaming in. Reuses the launcher card chrome so it is
+/// visually identical to the download splash: one continuous full-screen screen
+/// from download through pre-generation, never a popup over a half-built editor.
+///
+/// Returns `true` while the splash is up (the caller skips rendering the
+/// editor); `false` once the initial load has completed -- latched, so later
+/// mid-session reloads use the compact bottom-left indicator instead.
+///
+/// Showing the splash *instead of* the editor is safe because the viewport's
+/// GPU resources are registered eagerly at startup ([`init_viewport_resources`])
+/// and the ground-texture decode + chunked upload run in `update()` via the
+/// queue -- not the paint callback -- so they complete while this splash, rather
+/// than the editor, is on screen.
+///
+/// [`init_viewport_resources`]: crate::viewport::init_viewport_resources
+#[cfg(target_arch = "wasm32")]
+pub fn show_web_loading_splash(ui: &mut egui::Ui, app: &mut EditorApp) -> bool {
+    if app.rt.web_initial_load_done || app.assets.is_none() {
+        return false;
+    }
+    let stats_ready = app.stats.is_some();
+    let terrain_ready = app.tileset.is_some() && app.ground_data.is_some();
+
+    // When Remastered is selected and the pack is present, the HQ terrain
+    // decodes on this splash so the editor opens with it already rendering. We
+    // wait through the transcoder's load (it is slower than the Classic terrain
+    // load, so requiring it to be *ready* here would dismiss the splash before
+    // HQ even starts); only a transcoder that outright failed stops the wait.
+    let hq_wanted = app.render_settings.terrain_quality
+        == crate::viewport::renderer::TerrainQuality::High
+        && app.rt.web_vfs.as_ref().is_some_and(|v| v.has_high())
+        && !crate::viewport::basis::is_failed();
+    let hq_ready = !hq_wanted
+        || (app.rt.web_hq_loaded_tileset == Some(app.current_tileset)
+            && app.rt.web_ground_decode.is_none()
+            && app.rt.web_hq_prefetch.is_none()
+            && app.rt.ground_texture_load.is_none());
+
+    if stats_ready && terrain_ready && hq_ready {
+        app.rt.web_initial_load_done = true;
+        return false;
+    }
+
+    let stats_attempted = app.rt.stats_load_attempted;
+    let hq_frac = app
+        .rt
+        .web_ground_decode
+        .as_ref()
+        .map(crate::app::web_ground::WebGroundDecode::fraction);
+
+    splash_card(ui, app.editor_icon.as_ref(), |ui| {
+        splash_task_done(ui, "Downloaded game data");
+
+        if stats_ready {
+            splash_task_done(ui, "Loaded stats");
+        } else if stats_attempted {
+            ui.colored_label(
+                egui::Color32::from_rgb(220, 80, 80),
+                "Failed to load stats from the selected data.",
+            );
+        } else {
+            splash_task_progress(ui, "Loading stats...", None);
+        }
+
+        if terrain_ready {
+            splash_task_done(ui, "Loaded terrain");
+        } else if stats_ready {
+            splash_task_progress(ui, "Loading terrain...", None);
+        } else {
+            splash_task_pending(ui, "Loading terrain");
+        }
+
+        if hq_wanted {
+            if hq_ready {
+                splash_task_done(ui, "Decoded Remastered terrain");
+            } else {
+                splash_task_progress(ui, "Decoding Remastered terrain...", hq_frac);
+            }
+        }
+    });
+
+    ui.ctx().request_repaint();
+    true
+}
+
+/// Mid-session web loading popup: a centered modal that dims the editor while a
+/// quality or tileset change re-decodes the ground textures -- most visibly the
+/// slow Remastered HQ decode. The *initial* load uses the full-screen splash
+/// ([`show_web_loading_splash`]); this fires only once that has latched, so a
+/// change made while the editor is in use gets a centered popup rather than a
+/// corner bar.
+#[cfg(target_arch = "wasm32")]
+pub fn show_web_loading_overlay(ui: &mut egui::Ui, app: &mut EditorApp) {
+    if !app.rt.web_initial_load_done {
+        return;
+    }
+    let decoding = app.rt.web_hq_prefetch.is_some() || app.rt.web_ground_decode.is_some();
+    let uploading = app.rt.ground_texture_load.is_some();
+    if !decoding && !uploading {
+        return;
+    }
+
+    let label =
+        if app.render_settings.terrain_quality == crate::viewport::renderer::TerrainQuality::High {
+            "Decoding Remastered terrain..."
+        } else {
+            "Loading terrain..."
+        };
+    let frac = app
+        .rt
+        .web_ground_decode
+        .as_ref()
+        .map(crate::app::web_ground::WebGroundDecode::fraction);
+    let icon = app.editor_icon.clone();
+
+    let ctx = ui.ctx().clone();
+    egui::Modal::new(egui::Id::new("web_reload_modal")).show(&ctx, |ui| {
+        ui.set_width(SPLASH_WIDTH);
+        splash_title_block(ui, icon.as_ref());
+        splash_task_progress(ui, label, frac);
+        ui.add_space(12.0);
+    });
+    ctx.request_repaint();
+}
+
 fn show_thumbnail_tasks(ui: &mut egui::Ui, app: &EditorApp, above_thumbnails_done: bool) {
     let current_ts = &app.model_thumbnails.current_tileset;
 

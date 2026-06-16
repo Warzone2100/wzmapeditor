@@ -250,26 +250,51 @@ pub fn linear_to_srgb(img: &mut image::RgbaImage) {
     }
 }
 
+/// Run per-layer texture loads in parallel across scoped threads, collecting
+/// results in source order, for I/O throughput.
+///
+/// Native only: the web build has no usable OS threads (GitHub Pages cannot
+/// send the COOP/COEP headers `SharedArrayBuffer` needs) and decodes through
+/// its own frame-budgeted path in [`crate::app::web_ground`] instead.
+#[cfg(not(target_arch = "wasm32"))]
+fn load_layers<F>(tasks: Vec<F>) -> Vec<Option<Vec<u8>>>
+where
+    F: FnOnce() -> Option<Vec<u8>> + Send,
+{
+    std::thread::scope(|s| {
+        let handles: Vec<_> = tasks.into_iter().map(|t| s.spawn(t)).collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().ok().flatten())
+            .collect()
+    })
+}
+
 /// Load a ground type texture as RGBA pixels.
 ///
-/// Tries disk cache first, then KTX2 (high.wz), then PNG (source/extracted).
-fn load_ground_texture(
-    texpages_dir: &std::path::Path,
+/// Tries the disk cache first (native only), then KTX2 (high.wz), then PNG
+/// (source/extracted). The web build has no disk cache and decodes on demand.
+pub(crate) fn load_ground_texture(
+    assets: &dyn crate::assets::AssetSource,
+    dir_rel: &std::path::Path,
     filename: &str,
     target_size: u32,
 ) -> Option<Vec<u8>> {
-    let expected_bytes = (target_size * target_size * 4) as usize;
-
-    // Check disk cache first for previously decoded raw RGBA bytes.
-    let cache_dir = crate::config::ground_cache_dir();
-    let cache_name = filename.replace(".png", ".bin");
-    let cache_path = cache_dir.join(&cache_name);
-    if let Ok(data) = std::fs::read(&cache_path) {
-        if data.len() == expected_bytes {
-            log::debug!("Loaded cached ground texture: {cache_name}");
-            return Some(data);
+    // Check disk cache first for previously decoded raw RGBA bytes. The
+    // cache lives under the config dir, not the data root, so it is read
+    // directly rather than through the asset source (native-only).
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let expected_bytes = (target_size * target_size * 4) as usize;
+        let cache_name = filename.replace(".png", ".bin");
+        let cache_path = crate::config::ground_cache_dir().join(&cache_name);
+        if let Ok(data) = std::fs::read(&cache_path) {
+            if data.len() == expected_bytes {
+                log::debug!("Loaded cached ground texture: {cache_name}");
+                return Some(data);
+            }
+            log::warn!("Cache file {cache_name} has wrong size, re-decoding");
         }
-        log::warn!("Cache file {cache_name} has wrong size, re-decoding");
     }
 
     // Try KTX2 first - high.wz ships HQ BasisU+Zstd compressed textures
@@ -291,10 +316,18 @@ fn load_ground_texture(
                 if is_diffuse {
                     linear_to_srgb(&mut rgba);
                 }
-                let resized_data = resize_rgba(&rgba, target_size);
+                let resized_data = resize_rgba(rgba, target_size);
                 // Cache raw RGBA bytes at target size for instant loading.
-                if let Err(e) = cache_ground_texture_raw(&cache_dir, &cache_name, &resized_data) {
-                    log::warn!("Failed to cache ground texture {cache_name}: {e}");
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let cache_name = filename.replace(".png", ".bin");
+                    if let Err(e) = cache_ground_texture_raw(
+                        &crate::config::ground_cache_dir(),
+                        &cache_name,
+                        &resized_data,
+                    ) {
+                        log::warn!("Failed to cache ground texture {cache_name}: {e}");
+                    }
                 }
                 return Some(resized_data);
             }
@@ -305,17 +338,63 @@ fn load_ground_texture(
     }
 
     // Fall back to PNG (source checkouts or base.wz extracted assets).
-    let png_path = texpages_dir.join(filename);
-    if let Ok(img) = image::open(&png_path) {
+    let png_rel = dir_rel.join(filename);
+    if let Some(bytes) = assets.bytes(&png_rel)
+        && let Ok(img) = image::load_from_memory(&bytes)
+    {
         let rgba = img.to_rgba8();
-        return Some(resize_rgba(&rgba, target_size));
+        return Some(resize_rgba(rgba, target_size));
     }
 
     log::debug!("Ground texture not found: {filename} (tried cache, .ktx2, and .png)");
     None
 }
 
+/// Decode a single decal tile to RGBA at `target_size` (web build).
+///
+/// Mirrors the priority chain of [`load_decal_texture_data_from_wz`] minus the
+/// `base.wz` archive step (the web VFS overlays high.wz onto the base tree and
+/// has no separate pre-overlay archive): HQ 256px KTX2, then HQ 256px PNG, then
+/// the extracted 128px PNG. high.wz KTX2 tiles are linear, so the diffuse path
+/// converts to sRGB for the `Rgba8UnormSrgb` upload.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn load_decal_tile(
+    assets: &dyn crate::assets::AssetSource,
+    tileset_128_rel: &std::path::Path,
+    tileset_256_rel: &std::path::Path,
+    tile_index: u32,
+    target_size: u32,
+) -> Option<Vec<u8>> {
+    let filename = format!("tile-{tile_index:02}.png");
+    let ktx2_filename = format!("tile-{tile_index:02}.ktx2");
+    assets
+        .bytes(&tileset_256_rel.join(&ktx2_filename))
+        .and_then(|bytes| match load_ktx2_as_rgba_bytes(&bytes) {
+            Ok(mut rgba) => {
+                linear_to_srgb(&mut rgba);
+                Some(resize_rgba(rgba, target_size))
+            }
+            Err(e) => {
+                log::warn!("Failed to decode decal KTX2 tile-{tile_index:02}: {e}");
+                None
+            }
+        })
+        .or_else(|| {
+            assets
+                .bytes(&tileset_256_rel.join(&filename))
+                .and_then(|bytes| image::load_from_memory(&bytes).ok())
+                .map(|img| resize_rgba(img.to_rgba8(), target_size))
+        })
+        .or_else(|| {
+            assets
+                .bytes(&tileset_128_rel.join(&filename))
+                .and_then(|bytes| image::load_from_memory(&bytes).ok())
+                .map(|img| resize_rgba(img.to_rgba8(), target_size))
+        })
+}
+
 /// Save raw RGBA bytes to the disk cache.
+#[cfg(not(target_arch = "wasm32"))]
 fn cache_ground_texture_raw(
     cache_dir: &std::path::Path,
     cache_name: &str,
@@ -332,18 +411,52 @@ fn cache_ground_texture_raw(
 ///
 /// Uses `CatmullRom` filter which is visually equivalent to Lanczos3
 /// for game textures but significantly faster.
-pub fn resize_rgba(img: &image::RgbaImage, target_size: u32) -> Vec<u8> {
-    let (w, h) = (img.width(), img.height());
-    if w == target_size && h == target_size {
-        img.as_raw().clone()
+pub fn resize_rgba(img: image::RgbaImage, target_size: u32) -> Vec<u8> {
+    if img.width() == target_size && img.height() == target_size {
+        img.into_raw()
     } else {
-        let resized = image::imageops::resize(
-            img,
+        image::imageops::resize(
+            &img,
             target_size,
             target_size,
             image::imageops::FilterType::CatmullRom,
-        );
-        resized.into_raw()
+        )
+        .into_raw()
+    }
+}
+
+/// Build a flat `layers` × `tex_size`² RGBA buffer with every pixel set to
+/// `pixel`.
+///
+/// Seeds a ground/decal texture array with a neutral default (mid-gray diffuse,
+/// flat normal, black specular) so layers with no source asset still upload a
+/// sensible value when decoded layers overwrite only the slots that exist.
+#[cfg(any(target_arch = "wasm32", test))]
+pub(crate) fn solid_color_array(pixel: [u8; 4], tex_size: u32, layers: u32) -> Vec<u8> {
+    let pixels = (tex_size * tex_size) as usize * layers as usize;
+    // Build in one pass: reserving then writing the pattern avoids the leading
+    // zero-fill a `vec![0; n]` + overwrite would do over a multi-MiB buffer.
+    let mut data = Vec::with_capacity(pixels * 4);
+    for _ in 0..pixels {
+        data.extend_from_slice(&pixel);
+    }
+    data
+}
+
+/// Copy one decoded RGBA layer into `buffer` at `offset`.
+///
+/// Returns `false` and leaves `buffer` untouched if the layer would overrun, so
+/// a malformed decode (wrong dimensions) cannot corrupt adjacent layers.
+#[cfg(any(target_arch = "wasm32", test))]
+pub(crate) fn write_array_layer(buffer: &mut [u8], offset: usize, rgba: &[u8]) -> bool {
+    let Some(end) = offset.checked_add(rgba.len()) else {
+        return false;
+    };
+    if end <= buffer.len() {
+        buffer[offset..end].copy_from_slice(rgba);
+        true
+    } else {
+        false
     }
 }
 
@@ -499,7 +612,7 @@ mod tests {
     #[test]
     fn resize_rgba_downscales_correctly() {
         let img = image::RgbaImage::from_pixel(512, 512, image::Rgba([100, 150, 200, 255]));
-        let result = resize_rgba(&img, 256);
+        let result = resize_rgba(img, 256);
         assert_eq!(result.len(), 256 * 256 * 4);
         // Uniform color should survive downscale.
         assert_eq!(result[0], 100);
@@ -764,5 +877,46 @@ mod tests {
         assert_eq!(data[layer_bytes], 128);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn solid_color_array_fills_every_pixel() {
+        let data = solid_color_array([128, 128, 255, 255], 4, 2);
+        assert_eq!(data.len(), 4 * 4 * 4 * 2);
+        for px in data.chunks_exact(4) {
+            assert_eq!(px, [128, 128, 255, 255]);
+        }
+    }
+
+    #[test]
+    fn solid_color_array_zero_layers_is_empty() {
+        assert!(solid_color_array([0, 0, 0, 255], 256, 0).is_empty());
+    }
+
+    #[test]
+    fn write_array_layer_copies_into_its_slot() {
+        let mut buffer = vec![0u8; 12];
+        assert!(write_array_layer(&mut buffer, 4, &[1, 2, 3, 4]));
+        assert_eq!(buffer, [0, 0, 0, 0, 1, 2, 3, 4, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn write_array_layer_rejects_overrun_without_corrupting() {
+        let mut buffer = vec![9u8; 6];
+        // A layer that would spill past the end must be dropped, not clamped.
+        assert!(!write_array_layer(&mut buffer, 4, &[1, 2, 3, 4]));
+        assert_eq!(buffer, [9, 9, 9, 9, 9, 9]);
+    }
+
+    #[test]
+    fn linear_to_srgb_maps_endpoints_and_midpoint() {
+        let mut img = image::RgbaImage::from_pixel(1, 1, image::Rgba([0, 128, 255, 200]));
+        linear_to_srgb(&mut img);
+        let px = img.get_pixel(0, 0).0;
+        assert_eq!(px[0], 0);
+        assert_eq!(px[2], 255);
+        assert_eq!(px[3], 200);
+        // Linear 128/255 encodes to ~188 in sRGB; allow a little rounding slack.
+        assert!((187..=189).contains(&px[1]), "got {}", px[1]);
     }
 }

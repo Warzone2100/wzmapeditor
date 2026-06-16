@@ -182,6 +182,26 @@ pub fn show_menu_bar(ui: &mut Ui, app: &mut EditorApp) {
                     ui.close();
                 }
             }
+            #[cfg(target_arch = "wasm32")]
+            {
+                let hq_loaded = app.rt.web_vfs.as_ref().is_some_and(|v| v.has_high());
+                let uploading = app.rt.web_high_rx.is_some();
+                if !hq_loaded {
+                    ui.separator();
+                    if uploading {
+                        ui.label("Loading high.wz\u{2026}");
+                    } else {
+                        if ui.button("Get Remastered (HQ) pack\u{2026}").clicked() {
+                            crate::web_data::open_hq_release_page();
+                            ui.close();
+                        }
+                        if ui.button("Upload high.wz\u{2026}").clicked() {
+                            crate::web_data::begin_high_upload(app, ui.ctx());
+                            ui.close();
+                        }
+                    }
+                }
+            }
             ui.separator();
             if ui.button("Reset Layout").clicked() {
                 app.dock = crate::app::default_dock_layout();

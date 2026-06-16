@@ -16,6 +16,12 @@
     <link data-trunk rel="rust" data-wasm-opt="z"
         data-wasm-opt-params="--enable-bulk-memory --enable-sign-ext --enable-mutable-globals --enable-nontrapping-float-to-int --enable-multivalue --enable-reference-types" />
 
+    <!-- Vendored Basis Universal transcoder (Apache-2.0); decodes the uploaded
+         high.wz KTX2/UASTC terrain in the browser. Loaded on demand by
+         js/basis_glue.js. -->
+    <link data-trunk rel="copy-file" href="vendor/basis/basis_transcoder.js" />
+    <link data-trunk rel="copy-file" href="vendor/basis/basis_transcoder.wasm" />
+
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#909090" />
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#404040" />
 

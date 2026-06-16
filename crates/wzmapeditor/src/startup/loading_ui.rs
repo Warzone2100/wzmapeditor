@@ -7,8 +7,11 @@
 use crate::app::EditorApp;
 use crate::startup::splash_ui::splash_task_progress;
 
-/// Matches the splash screen width.
-const SPLASH_WIDTH: f32 = 360.0;
+/// Width of the compact mid-session progress overlay. These tasks (e.g. a
+/// Remastered-quality switch) run while the editor is already in use, so the
+/// overlay tucks into the viewport's bottom-left rather than filling the
+/// centre like the startup splash.
+const OVERLAY_WIDTH: f32 = 240.0;
 
 /// Cap on prepared-model GPU uploads per frame.
 const MAP_MODELS_PER_FRAME: usize = 64;
@@ -17,6 +20,14 @@ const GROUND_UPLOAD_STEPS: u32 = 7;
 
 /// Unified loading screen showing all active background tasks.
 pub fn show_loading_screen(ctx: &egui::Context, app: &mut EditorApp) {
+    // The web build's full-screen launcher splash owns all progress display
+    // until the initial load finishes; suppress this compact corner overlay so
+    // its bars don't duplicate the splash's in the bottom-left.
+    #[cfg(target_arch = "wasm32")]
+    if !app.rt.web_initial_load_done {
+        return;
+    }
+
     let mut tasks: Vec<(&str, Option<f32>)> = Vec::new();
 
     if let Some(ref p) = app.generator_dialog.progress {
@@ -29,6 +40,9 @@ pub fn show_loading_screen(ctx: &egui::Context, app: &mut EditorApp) {
         tasks.push(("Decoding ground textures", Some(frac)));
     }
 
+    // On web, ground-texture loading is shown by the centered modal overlay
+    // (`splash_ui::show_web_loading_overlay`), not this corner bar.
+    #[cfg(not(target_arch = "wasm32"))]
     if let Some(ref state) = app.rt.ground_texture_load {
         let raw = state.progress.load(std::sync::atomic::Ordering::Relaxed);
         if raw > 1000 {
@@ -52,15 +66,14 @@ pub fn show_loading_screen(ctx: &egui::Context, app: &mut EditorApp) {
         .title_bar(false)
         .collapsible(false)
         .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-        .fixed_size([SPLASH_WIDTH, 0.0])
+        .anchor(egui::Align2::LEFT_BOTTOM, [12.0, -12.0])
+        .fixed_size([OVERLAY_WIDTH, 0.0])
         .show(ctx, |ui| {
-            ui.add_space(8.0);
+            ui.add_space(4.0);
             for (label, progress) in &tasks {
                 splash_task_progress(ui, label, *progress);
                 ui.add_space(4.0);
             }
-            ui.add_space(4.0);
         });
 
     ctx.request_repaint();

@@ -11,6 +11,10 @@ pub mod output_log;
 mod testing;
 mod tileset;
 mod types;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod web_ground;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod web_ground_cache;
 pub use types::*;
 
 use output_log::{LogEntry, LogSeverity, LogSource, OutputLog};
@@ -750,7 +754,21 @@ impl eframe::App for EditorApp {
             crate::startup::splash_ui::show_launcher(ui, self);
             return;
         }
+        // The web build keeps the full-screen launcher splash up (instead of
+        // the editor) until its essential assets -- and, when Remastered is
+        // selected, the HQ ground decode -- finish streaming in. The GPU
+        // uploads run in `update()` via the queue, so they complete behind the
+        // splash without the editor painting.
+        #[cfg(target_arch = "wasm32")]
+        if crate::startup::splash_ui::show_web_loading_splash(ui, self) {
+            return;
+        }
         show_ui_panels(ui, self);
+        // A mid-session quality/tileset change re-decodes the ground textures;
+        // dim the editor with a centered popup until it finishes, rather than
+        // showing a corner bar.
+        #[cfg(target_arch = "wasm32")]
+        crate::startup::splash_ui::show_web_loading_overlay(ui, self);
     }
 
     fn on_exit(&mut self) {
@@ -989,6 +1007,15 @@ fn auto_load_assets(ctx: &egui::Context, app: &mut EditorApp) {
         {
             app.start_ground_data_load();
         }
+    }
+
+    // Web: once Classic metadata is published, decode the HQ ground arrays
+    // (frame-budgeted) when Remastered is selected and the pack is ready, then
+    // feed the result into the shared chunked-upload state machine below.
+    #[cfg(target_arch = "wasm32")]
+    {
+        crate::app::web_ground::maybe_start(app);
+        crate::app::web_ground::poll(ctx, app);
     }
 
     crate::startup::loading_ui::show_ground_precache_progress(ctx, app);

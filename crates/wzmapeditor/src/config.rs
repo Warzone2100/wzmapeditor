@@ -550,6 +550,7 @@ pub fn autosave_dir() -> PathBuf {
 
 /// `<config_dir>/thumb-cache`. 128x128 PNG model thumbnails that persist
 /// across restarts; invalidated when the cache version changes.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn thumb_cache_dir() -> PathBuf {
     dirs_next()
         .unwrap_or_else(|| PathBuf::from("."))

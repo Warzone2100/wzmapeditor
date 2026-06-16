@@ -51,7 +51,7 @@ impl CustomTemplateStore {
         // Astronomically unlikely overflow; timestamp-based fallback.
         format!(
             "Custom_{}",
-            std::time::SystemTime::UNIX_EPOCH
+            web_time::SystemTime::UNIX_EPOCH
                 .elapsed()
                 .map_or(0, |d| d.as_nanos())
         )

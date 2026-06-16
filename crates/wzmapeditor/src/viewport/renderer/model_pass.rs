@@ -285,18 +285,21 @@ impl super::EditorRenderer {
             .upload_model(device, queue, key, mesh, diffuse, tcmask, normal, specular);
     }
 
-    /// Render a model to an offscreen thumbnail and return the pixels.
+    /// Begin an offscreen thumbnail render and GPU-to-CPU readback.
     ///
-    /// Renders into the small [`super::THUMB_SIZE`] target. Used by the asset
+    /// Renders into the small [`super::THUMB_SIZE`] target and returns a
+    /// handle to poll for completion, or `None` if there is nothing to
+    /// render (none of the requested models are uploaded). Used by the asset
     /// browser and the splash-time preload pass.
-    pub fn render_thumbnail(
+    pub fn begin_thumbnail_readback(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         models: &[ThumbnailEntry<'_>],
         y_rotation: f32,
-    ) -> Option<egui::ColorImage> {
-        let encoded = encode_thumbnail_pass(
+    ) -> Option<super::super::thumbnail::ThumbnailReadback> {
+        let slot = self.thumb.claim_slot()?;
+        let Some(encoded) = encode_thumbnail_pass(
             device,
             queue,
             &self.models,
@@ -304,22 +307,36 @@ impl super::EditorRenderer {
             models,
             y_rotation,
             &self.thumb,
-        )?;
-        super::super::thumbnail::submit_and_read_back(
-            device,
+        ) else {
+            self.thumb.free_slot(slot);
+            return None;
+        };
+        Some(super::super::thumbnail::begin_read_back(
             queue,
             encoded,
             &self.thumb,
+            slot,
             super::THUMB_SIZE,
-        )
+        ))
+    }
+
+    /// Decode a completed thumbnail readback into CPU pixels.
+    ///
+    /// Call only after the handle from [`Self::begin_thumbnail_readback`]
+    /// reports [`ReadbackStatus::Ready`], passing that handle's
+    /// [`slot`](super::super::thumbnail::ThumbnailReadback::slot).
+    ///
+    /// [`ReadbackStatus::Ready`]: super::super::thumbnail::ReadbackStatus::Ready
+    pub fn finish_thumbnail_readback(&self, slot: usize) -> egui::ColorImage {
+        super::super::thumbnail::finish_read_back(&self.thumb, slot, super::THUMB_SIZE)
     }
 
     /// Render a model to the larger [`super::PREVIEW_THUMB_SIZE`] target.
     ///
     /// Used by the droid designer's live 3D preview. Unlike
-    /// [`Self::render_thumbnail`], this path does not copy the rendered
-    /// pixels back to the CPU: the preview's color texture is registered
-    /// directly with `egui_wgpu` and sampled from the GPU.
+    /// [`Self::begin_thumbnail_readback`], this path does not copy the
+    /// rendered pixels back to the CPU: the preview's color texture is
+    /// registered directly with `egui_wgpu` and sampled from the GPU.
     pub fn render_preview_thumbnail(
         &self,
         device: &wgpu::Device,

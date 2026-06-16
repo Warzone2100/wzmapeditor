@@ -373,6 +373,16 @@ pub fn show_map_model_loading(ctx: &egui::Context, app: &mut EditorApp) {
 /// controls the per-frame budget: aggressive while the launcher owns the
 /// screen, conservative once the editor is interactive.
 pub fn show_thumbnail_preload(ctx: &egui::Context, app: &mut EditorApp, splash: bool) {
+    // Complete any in-flight GPU thumbnail readbacks before dispatching
+    // more, so the shared staging buffer is freed for reuse this frame.
+    app.model_thumbnails
+        .tick_readbacks(ctx, app.wgpu_render_state.as_ref());
+
+    // Restore (and lazily persist) generated thumbnails via browser Cache
+    // Storage so the web build does not re-render them every session.
+    #[cfg(target_arch = "wasm32")]
+    app.model_thumbnails.web_thumb_tick(ctx);
+
     // Advance to the next pending tileset once the current one finishes,
     // so each tileset's disk cache gets populated.
     if matches!(
@@ -418,7 +428,6 @@ pub fn show_thumbnail_preload(ctx: &egui::Context, app: &mut EditorApp, splash: 
     }
 
     let progress = app.model_thumbnails.tick_preload(
-        ctx,
         &mut app.model_loader,
         app.wgpu_render_state.as_ref(),
         splash,

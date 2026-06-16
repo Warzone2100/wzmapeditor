@@ -20,28 +20,24 @@ const DECAL_ALPHA_THRESHOLD: u8 = 250;
 /// Returns a flat buffer of `num_layers` x 1024x1024x4 bytes, ready for GPU upload
 /// via [`super::renderer::EditorRenderer::upload_ground_texture_data`]. Textures are
 /// loaded in parallel using scoped threads for maximum I/O throughput.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn load_ground_texture_data(
-    texpages_dir: &std::path::Path,
+    assets: &dyn crate::assets::AssetSource,
+    dir_rel: &std::path::Path,
     ground_types: &[GroundTexture],
 ) -> Vec<u8> {
     let tex_size = 1024u32;
     let layer_bytes = (tex_size * tex_size * 4) as usize;
     let num_layers = ground_types.len();
 
-    // Load all textures in parallel using scoped threads.
-    let results: Vec<Option<Vec<u8>>> = std::thread::scope(|s| {
-        let handles: Vec<_> = ground_types
-            .iter()
-            .map(|gt| {
-                let filename = &gt.filename;
-                s.spawn(move || load_ground_texture(texpages_dir, filename, tex_size))
-            })
-            .collect();
-        handles
-            .into_iter()
-            .map(|h| h.join().ok().flatten())
-            .collect()
-    });
+    let tasks: Vec<_> = ground_types
+        .iter()
+        .map(|gt| {
+            let filename = &gt.filename;
+            move || load_ground_texture(assets, dir_rel, filename, tex_size)
+        })
+        .collect();
+    let results = load_layers(tasks);
 
     // Assemble into flat buffer.
     let mut data = vec![128u8; layer_bytes * num_layers]; // Gray fallback
@@ -66,33 +62,30 @@ pub fn load_ground_texture_data(
 /// `suffix` is `"_nm"` for normal maps or `"_sm"` for specular maps.
 /// Returns a flat buffer of `num_layers` x 1024x1024x4 bytes, with a neutral
 /// default for missing maps (flat normal `(128,128,255)` or black specular).
+#[cfg(not(target_arch = "wasm32"))]
 pub fn load_ground_normal_specular_data(
-    texpages_dir: &std::path::Path,
+    assets: &dyn crate::assets::AssetSource,
+    dir_rel: &std::path::Path,
     ground_types: &[GroundTexture],
     suffix: &str,
 ) -> Vec<u8> {
     let tex_size = 1024u32;
 
-    let results: Vec<Option<Vec<u8>>> = std::thread::scope(|s| {
-        let handles: Vec<_> = ground_types
-            .iter()
-            .map(|gt| {
-                let variant_filename = if suffix == "_nm" {
-                    gt.normal_filename.as_deref()
-                } else {
-                    gt.specular_filename.as_deref()
-                };
-                s.spawn(move || {
-                    variant_filename
-                        .and_then(|fname| load_ground_texture(texpages_dir, fname, tex_size))
-                })
-            })
-            .collect();
-        handles
-            .into_iter()
-            .map(|h| h.join().ok().flatten())
-            .collect()
-    });
+    let tasks: Vec<_> = ground_types
+        .iter()
+        .map(|gt| {
+            let variant_filename = if suffix == "_nm" {
+                gt.normal_filename.as_deref()
+            } else {
+                gt.specular_filename.as_deref()
+            };
+            move || {
+                variant_filename
+                    .and_then(|fname| load_ground_texture(assets, dir_rel, fname, tex_size))
+            }
+        })
+        .collect();
+    let results = load_layers(tasks);
 
     assemble_texture_array_with_default(results, tex_size, suffix)
 }
@@ -100,25 +93,22 @@ pub fn load_ground_normal_specular_data(
 /// Load decal normal or specular maps from `tile-XX_nm.png`/`.ktx2` files.
 ///
 /// `suffix` is `"_nm"` for normal maps or `"_sm"` for specular maps.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn load_decal_normal_specular_data(
-    tileset_256_dir: &std::path::Path,
+    assets: &dyn crate::assets::AssetSource,
+    tileset_256_rel: &std::path::Path,
     num_tiles: u32,
     suffix: &str,
 ) -> Vec<u8> {
     let tex_size = DECAL_TEX_SIZE;
 
-    let results: Vec<Option<Vec<u8>>> = std::thread::scope(|s| {
-        let handles: Vec<_> = (0..num_tiles)
-            .map(|i| {
-                let filename = format!("tile-{i:02}{suffix}.png");
-                s.spawn(move || load_ground_texture(tileset_256_dir, &filename, tex_size))
-            })
-            .collect();
-        handles
-            .into_iter()
-            .map(|h| h.join().ok().flatten())
-            .collect()
-    });
+    let tasks: Vec<_> = (0..num_tiles)
+        .map(|i| {
+            let filename = format!("tile-{i:02}{suffix}.png");
+            move || load_ground_texture(assets, tileset_256_rel, &filename, tex_size)
+        })
+        .collect();
+    let results = load_layers(tasks);
 
     assemble_texture_array_with_default(results, tex_size, suffix)
 }

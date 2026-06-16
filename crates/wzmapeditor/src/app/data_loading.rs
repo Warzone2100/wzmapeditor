@@ -129,7 +129,8 @@ pub(super) fn start_ground_data_load(app: &mut EditorApp) {
             decal_specular: ds,
             num_decal_tiles,
         });
-    });
+    };
+    std::thread::spawn(work);
 
     app.rt.ground_texture_load = Some(GroundTextureLoadState {
         receiver: rx,
@@ -196,6 +197,11 @@ pub(super) fn start_ground_precache(app: &mut EditorApp) {
     app.rt.ground_precache_rx = Some(rx);
     app.log("Pre-caching ground textures for all tilesets...".to_string());
 }
+
+/// Ground-texture pre-caching decodes KTX2 to disk, neither of which the
+/// web build supports; textures decode on demand in memory instead.
+#[cfg(target_arch = "wasm32")]
+pub(super) fn start_ground_precache(_app: &mut EditorApp) {}
 
 /// Set the resolved asset root, save config, and schedule tileset + stats reload.
 ///

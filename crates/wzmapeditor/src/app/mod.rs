@@ -752,7 +752,9 @@ impl eframe::App for EditorApp {
         // `egui_texid_Managed(N) label has been destroyed` panic that
         // wgpu raises when a queue submit references a texture that has
         // already been destroyed by an `egui` `TexturesDelta::Free` from
-        // the same teardown.
+        // the same teardown. The blocking wait deadlocks on a
+        // single-threaded wasm target, where the browser owns teardown.
+        #[cfg(not(target_arch = "wasm32"))]
         if let Some(rs) = &self.wgpu_render_state {
             let _ = rs.device.poll(wgpu::PollType::wait_indefinitely());
         }
@@ -847,14 +849,25 @@ fn enforce_fps_cap(app: &mut EditorApp) {
         return;
     }
     let target_dt = std::time::Duration::from_secs_f32(1.0 / fps as f32);
-    let now = std::time::Instant::now();
+    let now = web_time::Instant::now();
     if let Some(last) = app.last_paint_at
         && let Some(remaining) = target_dt.checked_sub(now.duration_since(last))
     {
-        std::thread::sleep(remaining);
+        frame_sleep(remaining);
     }
-    app.last_paint_at = Some(std::time::Instant::now());
+    app.last_paint_at = Some(web_time::Instant::now());
 }
+
+/// Block the calling thread for `d`. The browser paces frames via
+/// `requestAnimationFrame` and has no usable thread to block (`thread::sleep`
+/// would freeze the tab), so the cap is a no-op on the web build.
+#[cfg(not(target_arch = "wasm32"))]
+fn frame_sleep(d: std::time::Duration) {
+    std::thread::sleep(d);
+}
+
+#[cfg(target_arch = "wasm32")]
+fn frame_sleep(_d: std::time::Duration) {}
 
 /// Poll background extraction and loading progress bars.
 fn poll_background_tasks(ctx: &egui::Context, app: &mut EditorApp) {

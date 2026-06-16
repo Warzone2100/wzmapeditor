@@ -82,32 +82,46 @@ impl AutoSaveState {
     }
 
     /// Spawn a background thread to write a `.wz` archive of `map`.
+    ///
+    /// No-op on the web build: there are no background threads and no
+    /// filesystem to write to (crash recovery is a native-only feature).
     pub fn start_save(&mut self, map: &wz_maplib::WzMap, save_path: Option<&Path>, players: u8) {
         if self.save_rx.is_some() {
             return;
         }
 
-        let (wz_path, entry) = prepare_save(map, save_path, players, &self.session_id);
-        let map_clone = map.clone();
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let (wz_path, entry) = prepare_save(map, save_path, players, &self.session_id);
+            let map_clone = map.clone();
 
-        let (tx, rx) = mpsc::channel();
-        std::thread::spawn(move || {
-            let result = wz_maplib::io_wz::save_to_wz_archive(
-                &map_clone,
-                &wz_path,
-                wz_maplib::OutputFormat::Ver3,
-            );
-            match result {
-                Ok(()) => {
-                    let _ = tx.send(Ok((wz_path, entry)));
+            let (tx, rx) = mpsc::channel();
+            std::thread::spawn(move || {
+                let result = wz_maplib::io_wz::save_to_wz_archive(
+                    &map_clone,
+                    &wz_path,
+                    wz_maplib::OutputFormat::Ver3,
+                );
+                match result {
+                    Ok(()) => {
+                        let _ = tx.send(Ok((wz_path, entry)));
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Err(format!("{e}")));
+                    }
                 }
-                Err(e) => {
-                    let _ = tx.send(Err(format!("{e}")));
-                }
-            }
-        });
+            });
 
-        self.save_rx = Some(rx);
+            self.save_rx = Some(rx);
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            // No filesystem to write to, but advance the timer anyway so
+            // `should_save` backs off for the full interval. Otherwise it stays
+            // true forever on a dirty document and the frame loop never idles.
+            let _ = (map, save_path, players);
+            self.last_save = Instant::now();
+        }
     }
 
     /// Poll for background save completion. Manifest I/O runs on the main

@@ -168,7 +168,6 @@ impl ThumbnailCache {
     /// Returns `(done, total)` for the progress bar, or `None` if complete.
     pub fn tick_preload(
         &mut self,
-        ctx: &egui::Context,
         model_loader: &mut Option<ModelLoader>,
         render_state: Option<&egui_wgpu::RenderState>,
         splash: bool,
@@ -186,15 +185,19 @@ impl ThumbnailCache {
         };
 
         let mut rendered_this_frame = 0usize;
-        let frame_start = std::time::Instant::now();
-        let cache_dir = self.disk_cache_dir.clone();
+        let frame_start = web_time::Instant::now();
 
         while rendered_this_frame < per_frame {
             if rendered_this_frame > 0 && frame_start.elapsed().as_millis() >= budget_ms {
                 break;
             }
-            // Split matches keep each borrow short: we can't hold a
-            // `&mut work` across `with_render_resources` (takes `&self`).
+            // The staging-buffer pool bounds how many readbacks can be in
+            // flight; once it is full, wait for tick_readbacks to drain some
+            // before dispatching more. Items that need no render (skipped
+            // below) do not occupy a slot, so they keep flowing.
+            if self.pending_readbacks.len() >= crate::viewport::renderer::READBACK_POOL_SIZE {
+                break;
+            }
             let item = match &mut self.preload {
                 PreloadState::Rendering { work, .. } => match work.pop() {
                     Some(item) => item,
@@ -211,31 +214,15 @@ impl ThumbnailCache {
                 continue;
             }
 
-            let image = with_render_resources(rs, |resources, device, queue| {
-                let entries = super::generator::thumbnail_entries(&item.parts);
-                resources
-                    .renderer
-                    .render_thumbnail(device, queue, &entries, 0.0)
-            });
+            let entries = super::generator::thumbnail_entries(&item.parts);
+            let _ = self.kickoff_thumbnail(rs, &entries, item.cache_key.clone());
 
+            // Count the item as processed at dispatch; the texture and disk
+            // write land later via tick_readbacks.
             if let PreloadState::Rendering { done, .. } = &mut self.preload {
                 *done += 1;
             }
             rendered_this_frame += 1;
-
-            if let Some(img) = image {
-                if self.current_tileset == self.active_tileset {
-                    let tex = ctx.load_texture(
-                        format!("thumb_{}", &item.cache_key),
-                        img.clone(),
-                        TextureOptions::LINEAR,
-                    );
-                    self.textures.insert(item.cache_key.clone(), tex);
-                }
-                if let Some(ref dir) = cache_dir {
-                    Self::save_to_disk_async(dir.clone(), item.cache_key, img);
-                }
-            }
         }
 
         let (done, work_empty) = match &self.preload {
@@ -243,7 +230,9 @@ impl ThumbnailCache {
             _ => return None,
         };
 
-        if work_empty {
+        // Defer completion until the final readbacks drain, so a tileset
+        // switch cannot discard in-flight thumbnails.
+        if work_empty && self.pending_readbacks.is_empty() {
             log::info!(
                 "Thumbnail preload complete ({}): {done} rendered",
                 self.current_tileset

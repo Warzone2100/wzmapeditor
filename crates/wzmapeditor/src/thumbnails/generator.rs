@@ -9,12 +9,11 @@
 //! [`render_preview_thumbnail`]: crate::viewport::renderer::EditorRenderer::render_preview_thumbnail
 
 use eframe::egui_wgpu;
-use egui::{TextureHandle, TextureOptions};
+use egui::TextureHandle;
 
-use super::cache::CacheLookup;
+use super::cache::{CacheLookup, Kickoff};
 use super::{
-    MODEL_LOADS_PER_FRAME, THUMBNAILS_PER_FRAME, ThumbnailCache, with_render_resources,
-    with_render_resources_mut,
+    MODEL_LOADS_PER_FRAME, THUMBNAILS_PER_FRAME, ThumbnailCache, with_render_resources_mut,
 };
 use crate::viewport::model_loader::ModelLoader;
 
@@ -67,22 +66,13 @@ impl ThumbnailCache {
         }
         self.frame_budget += 1;
         let parts_vec = parts.to_vec();
-        match self.render_gpu_composite(&parts_vec, model_loader, render_state) {
-            Ok(Some(image)) => {
-                if let Some(ref dir) = self.disk_cache_dir {
-                    Self::save_to_disk(dir, cache_key, &image);
-                }
-                let tex =
-                    ctx.load_texture(format!("thumb_{cache_key}"), image, TextureOptions::LINEAR);
-                self.textures.insert(cache_key.to_string(), tex);
-                self.textures.get(cache_key)
-            }
-            Ok(None) => None,
-            Err(()) => {
-                self.failed.insert(cache_key.to_string());
-                None
-            }
+        if self
+            .render_gpu_composite(cache_key, &parts_vec, model_loader, render_state)
+            .is_err()
+        {
+            self.failed.insert(cache_key.to_string());
         }
+        None
     }
 
     /// Get a cached structure thumbnail, generating on demand.
@@ -118,37 +108,34 @@ impl ThumbnailCache {
         }
 
         self.frame_budget += 1;
-        match self.try_generate_gpu(ctx, imd_name, model_loader, render_state) {
-            Ok(Some(tex)) => {
-                self.textures.insert(imd_name.to_string(), tex);
-                self.textures.get(imd_name)
-            }
-            Ok(None) => None,
-            Err(()) => {
-                self.failed.insert(imd_name.to_string());
-                None
-            }
+        if self
+            .try_generate_gpu(imd_name, model_loader, render_state)
+            .is_err()
+        {
+            self.failed.insert(imd_name.to_string());
         }
+        None
     }
 
-    /// Generate a thumbnail using the GPU model pipeline (same shaders as viewport).
+    /// Dispatch a single-model thumbnail render on the GPU pipeline.
     ///
-    /// Returns `Ok(Some(tex))` on success, `Ok(None)` if the model isn't loaded
-    /// yet and we're out of load budget (caller should retry next frame),
-    /// or `Err(())` if the model genuinely failed (don't retry).
+    /// Returns `Ok(())` once the readback is dispatched or deferred (the
+    /// texture lands later via [`ThumbnailCache::tick_readbacks`]), or
+    /// `Err(())` if the model genuinely failed (don't retry).
+    ///
+    /// [`ThumbnailCache::tick_readbacks`]: super::ThumbnailCache::tick_readbacks
     fn try_generate_gpu(
         &mut self,
-        ctx: &egui::Context,
         imd_name: &str,
         model_loader: &mut Option<ModelLoader>,
         render_state: Option<&egui_wgpu::RenderState>,
-    ) -> Result<Option<TextureHandle>, ()> {
+    ) -> Result<(), ()> {
         let rs = render_state.ok_or(())?;
         let loader = model_loader.as_mut().ok_or(())?;
 
         if !loader.is_uploaded(imd_name) {
             if self.load_budget >= MODEL_LOADS_PER_FRAME {
-                return Ok(None);
+                return Ok(());
             }
             self.load_budget += 1;
             let uploaded = with_render_resources_mut(rs, |resources, device, queue| {
@@ -166,24 +153,9 @@ impl ThumbnailCache {
             team_color: crate::viewport::pie_mesh::TEAM_COLORS[0],
         };
 
-        let image = with_render_resources(rs, |resources, device, queue| {
-            resources
-                .renderer
-                .render_thumbnail(device, queue, &[entry], 0.0)
-        });
-
-        match image {
-            Some(img) => {
-                if let Some(ref dir) = self.disk_cache_dir {
-                    Self::save_to_disk(dir, imd_name, &img);
-                }
-                Ok(Some(ctx.load_texture(
-                    format!("thumb_{imd_name}"),
-                    img,
-                    TextureOptions::LINEAR,
-                )))
-            }
-            None => Err(()),
+        match self.kickoff_thumbnail(rs, &[entry], imd_name.to_string()) {
+            Kickoff::Dispatched | Kickoff::Busy => Ok(()),
+            Kickoff::Failed => Err(()),
         }
     }
 
@@ -215,25 +187,13 @@ impl ThumbnailCache {
             self.failed.insert(cache_key);
             return None;
         };
-        match self.render_gpu_composite(&parts, model_loader, render_state) {
-            Ok(Some(image)) => {
-                if !is_preview && let Some(ref dir) = self.disk_cache_dir {
-                    Self::save_to_disk(dir, &cache_key, &image);
-                }
-                let tex = ctx.load_texture(
-                    format!("thumb_droid_{template_key}"),
-                    image,
-                    TextureOptions::LINEAR,
-                );
-                self.textures.insert(cache_key.clone(), tex);
-                self.textures.get(&cache_key)
-            }
-            Ok(None) => None,
-            Err(()) => {
-                self.failed.insert(cache_key);
-                None
-            }
+        if self
+            .render_gpu_composite(&cache_key, &parts, model_loader, render_state)
+            .is_err()
+        {
+            self.failed.insert(cache_key);
         }
+        None
     }
 
     /// Generate a composite structure thumbnail (structure + base + weapons) via GPU.
@@ -260,50 +220,39 @@ impl ThumbnailCache {
             self.failed.insert(cache_key);
             return None;
         };
-        match self.render_gpu_composite(&parts, model_loader, render_state) {
-            Ok(Some(image)) => {
-                if let Some(ref dir) = self.disk_cache_dir {
-                    Self::save_to_disk(dir, &cache_key, &image);
-                }
-                let tex = ctx.load_texture(
-                    format!("thumb_struct_{structure_key}"),
-                    image,
-                    TextureOptions::LINEAR,
-                );
-                self.textures.insert(cache_key.clone(), tex);
-                self.textures.get(&cache_key)
-            }
-            Ok(None) => None,
-            Err(()) => {
-                self.failed.insert(cache_key);
-                None
-            }
+        if self
+            .render_gpu_composite(&cache_key, &parts, model_loader, render_state)
+            .is_err()
+        {
+            self.failed.insert(cache_key);
         }
+        None
     }
 
-    /// Render a composite model list on the GPU, reading pixels back for
-    /// disk caching. Used by the asset browser / splash preload path.
+    /// Dispatch a composite-model thumbnail render + readback under `cache_key`.
+    ///
+    /// Returns `Ok(())` once dispatched or deferred (the texture lands via
+    /// [`ThumbnailCache::tick_readbacks`]), or `Err(())` if nothing could be
+    /// rendered. Used by the asset browser / splash preload path.
+    ///
+    /// [`ThumbnailCache::tick_readbacks`]: super::ThumbnailCache::tick_readbacks
     pub(super) fn render_gpu_composite(
         &mut self,
+        cache_key: &str,
         parts: &[(String, glam::Vec3)],
         model_loader: &mut Option<ModelLoader>,
         render_state: Option<&egui_wgpu::RenderState>,
-    ) -> Result<Option<egui::ColorImage>, ()> {
+    ) -> Result<(), ()> {
         let rs = render_state.ok_or(())?;
 
         if !self.ensure_parts_uploaded(parts, model_loader, rs)? {
-            return Ok(None);
+            return Ok(());
         }
 
         let entries = thumbnail_entries(parts);
-        let image = with_render_resources(rs, |resources, device, queue| {
-            resources
-                .renderer
-                .render_thumbnail(device, queue, &entries, 0.0)
-        });
-        match image {
-            Some(img) => Ok(Some(img)),
-            None => Err(()),
+        match self.kickoff_thumbnail(rs, &entries, cache_key.to_string()) {
+            Kickoff::Dispatched | Kickoff::Busy => Ok(()),
+            Kickoff::Failed => Err(()),
         }
     }
 

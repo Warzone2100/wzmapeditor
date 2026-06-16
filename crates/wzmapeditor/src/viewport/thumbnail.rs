@@ -1,5 +1,8 @@
 //! Offscreen thumbnail rendering resources and GPU readback.
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
+
 use super::uniforms::Uniforms;
 
 /// 256 keeps grid thumbnails crisp after egui upscales for high-DPI displays.
@@ -24,6 +27,27 @@ pub struct ThumbnailEntry<'a> {
     pub team_color: [f32; 4],
 }
 
+/// Number of staging buffers in the readback pool. The single shared color
+/// target is rendered then copied per kickoff, all in submit order, so one
+/// staging buffer per in-flight readback is all the parallelism needs; this
+/// lets the preload loop dispatch several thumbnails per frame instead of
+/// serializing on one buffer. The readback-free preview target uses one slot.
+pub(crate) const READBACK_POOL_SIZE: usize = 4;
+
+const SLOT_FREE: u8 = 0;
+const SLOT_IN_FLIGHT: u8 = 1;
+const SLOT_MAPPED: u8 = 2;
+const SLOT_FAILED: u8 = 3;
+
+/// One pooled staging buffer and the state shared with its `map_async`
+/// callback. A slot is `FREE` until claimed, `IN_FLIGHT` until the copy maps,
+/// then `MAPPED` (decode + unmap) or `FAILED` (discard); either resolution
+/// returns it to `FREE`.
+struct StagingSlot {
+    buffer: wgpu::Buffer,
+    state: Arc<AtomicU8>,
+}
+
 /// Offscreen resources for GPU-based model thumbnail rendering.
 pub(crate) struct ThumbnailResources {
     pub color_texture: wgpu::Texture,
@@ -32,9 +56,30 @@ pub(crate) struct ThumbnailResources {
     #[expect(dead_code, reason = "must be kept alive to back the depth_view")]
     depth_texture: wgpu::Texture,
     pub depth_view: wgpu::TextureView,
-    pub staging_buffer: wgpu::Buffer,
+    staging: Vec<StagingSlot>,
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
+}
+
+impl ThumbnailResources {
+    /// Atomically claim a free staging slot, or `None` if the pool is full.
+    pub(crate) fn claim_slot(&self) -> Option<usize> {
+        self.staging.iter().position(|slot| {
+            slot.state
+                .compare_exchange(
+                    SLOT_FREE,
+                    SLOT_IN_FLIGHT,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                )
+                .is_ok()
+        })
+    }
+
+    /// Release a claimed slot whose render was abandoned before submission.
+    pub(crate) fn free_slot(&self, slot: usize) {
+        self.staging[slot].state.store(SLOT_FREE, Ordering::Release);
+    }
 }
 
 /// `sampleable` adds `TEXTURE_BINDING` for targets that egui samples
@@ -96,12 +141,23 @@ pub(crate) fn create_thumbnail_resources(
     // wgpu's COPY_BYTES_PER_ROW_ALIGNMENT is 256. THUMB_SIZE=256 (the
     // minimum here) gives 1024 bytes/row, already aligned, so no padding.
     let bytes_per_row = size * 4;
-    let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("thumb_staging"),
-        size: (bytes_per_row * size) as u64,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
+    // The preview target samples its color directly and never reads back, so it
+    // needs only one (unused) slot; the asset-browser target gets the full pool.
+    let slots = if sampleable { 1 } else { READBACK_POOL_SIZE };
+    let staging: Vec<StagingSlot> = (0..slots)
+        .map(|_| {
+            let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("thumb_staging"),
+                size: (bytes_per_row * size) as u64,
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            });
+            StagingSlot {
+                buffer,
+                state: Arc::new(AtomicU8::new(SLOT_FREE)),
+            }
+        })
+        .collect();
 
     let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("thumb_uniform"),
@@ -124,21 +180,69 @@ pub(crate) fn create_thumbnail_resources(
         color_view,
         depth_texture,
         depth_view,
-        staging_buffer,
+        staging,
         uniform_buffer,
         uniform_bind_group,
     }
 }
 
-/// Submit `encoder` after appending a staging-buffer copy, block on the
-/// readback, and return the decoded pixels. Asset-browser path only.
-pub(crate) fn submit_and_read_back(
-    device: &wgpu::Device,
+/// Completion state of a [`ThumbnailReadback`], polled each frame.
+pub(crate) enum ReadbackStatus {
+    /// The GPU copy and buffer mapping have not finished yet.
+    Pending,
+    /// The staging buffer is mapped; decode it via [`finish_read_back`].
+    Ready,
+    /// Mapping failed; the buffer was never mapped, so it must not be decoded.
+    Failed,
+}
+
+/// Handle to an in-flight thumbnail GPU-to-CPU readback.
+///
+/// Each readback owns one pooled staging slot for its lifetime. `state` is the
+/// same atomic the slot holds, so [`release`](Self::release) frees the slot
+/// directly without touching GPU resources.
+pub(crate) struct ThumbnailReadback {
+    slot: usize,
+    state: Arc<AtomicU8>,
+}
+
+impl ThumbnailReadback {
+    /// Non-blocking check of the readback's completion state.
+    pub(crate) fn status(&self) -> ReadbackStatus {
+        match self.state.load(Ordering::Acquire) {
+            SLOT_MAPPED => ReadbackStatus::Ready,
+            SLOT_FAILED => ReadbackStatus::Failed,
+            _ => ReadbackStatus::Pending,
+        }
+    }
+
+    /// The pooled staging slot this readback occupies.
+    pub(crate) fn slot(&self) -> usize {
+        self.slot
+    }
+
+    /// Return the slot to the pool after a failed map (the buffer was never
+    /// mapped, so no unmap is needed).
+    pub(crate) fn release(&self) {
+        self.state.store(SLOT_FREE, Ordering::Release);
+    }
+}
+
+/// Append a copy into staging slot `slot`, submit `encoder`, and issue a
+/// non-blocking `map_async`. Poll the returned handle each frame and decode
+/// with [`finish_read_back`] once it reports [`ReadbackStatus::Ready`].
+///
+/// `slot` must have been claimed via [`ThumbnailResources::claim_slot`]. The
+/// `map_async` callback only flips a shared atomic, so this works on a
+/// single-threaded wasm target where blocking on the buffer mapping would
+/// deadlock the browser event loop.
+pub(crate) fn begin_read_back(
     queue: &wgpu::Queue,
     mut encoder: wgpu::CommandEncoder,
     target: &ThumbnailResources,
+    slot: usize,
     size: u32,
-) -> Option<egui::ColorImage> {
+) -> ThumbnailReadback {
     let bytes_per_row = size * 4;
     encoder.copy_texture_to_buffer(
         wgpu::TexelCopyTextureInfo {
@@ -148,7 +252,7 @@ pub(crate) fn submit_and_read_back(
             aspect: wgpu::TextureAspect::All,
         },
         wgpu::TexelCopyBufferInfo {
-            buffer: &target.staging_buffer,
+            buffer: &target.staging[slot].buffer,
             layout: wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(bytes_per_row),
@@ -164,18 +268,35 @@ pub(crate) fn submit_and_read_back(
 
     queue.submit(std::iter::once(encoder.finish()));
 
-    let buffer_slice = target.staging_buffer.slice(..);
-    let (tx, rx) = std::sync::mpsc::channel();
-    buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-        let _ = tx.send(result);
-    });
-    let _ = device.poll(wgpu::PollType::wait_indefinitely());
+    let state = Arc::clone(&target.staging[slot].state);
+    let cb_state = Arc::clone(&state);
+    target.staging[slot]
+        .buffer
+        .slice(..)
+        .map_async(wgpu::MapMode::Read, move |result| {
+            let next = if result.is_ok() {
+                SLOT_MAPPED
+            } else {
+                SLOT_FAILED
+            };
+            cb_state.store(next, Ordering::Release);
+        });
 
-    rx.recv().ok()?.ok()?;
+    ThumbnailReadback { slot, state }
+}
 
-    let data = buffer_slice.get_mapped_range();
+/// Decode mapped staging slot `slot` into an RGB [`egui::ColorImage`], unmap
+/// it, and return the slot to the pool. Only call when the readback reported
+/// [`ReadbackStatus::Ready`].
+pub(crate) fn finish_read_back(
+    target: &ThumbnailResources,
+    slot: usize,
+    size: u32,
+) -> egui::ColorImage {
+    let row_stride = (size * 4) as usize;
     let size_usize = size as usize;
-    let row_stride = bytes_per_row as usize;
+    let buffer = &target.staging[slot].buffer;
+    let data = buffer.slice(..).get_mapped_range();
     let mut pixels = Vec::with_capacity(size_usize * size_usize);
     for row in data.chunks_exact(row_stride).take(size_usize) {
         for pixel in row[..size_usize * 4].chunks_exact(4) {
@@ -183,7 +304,9 @@ pub(crate) fn submit_and_read_back(
         }
     }
     drop(data);
-    target.staging_buffer.unmap();
-
-    Some(egui::ColorImage::new([size_usize, size_usize], pixels))
+    buffer.unmap();
+    target.staging[slot]
+        .state
+        .store(SLOT_FREE, Ordering::Release);
+    egui::ColorImage::new([size_usize, size_usize], pixels)
 }

@@ -346,6 +346,7 @@ pub fn poll_startup_loads(ctx: &egui::Context, app: &mut EditorApp) {
 }
 
 /// Pre-decode and cache KTX2 ground textures for all three tilesets.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn precache_ground_textures(
     data_dir: &std::path::Path,
     cache_dir: &std::path::Path,

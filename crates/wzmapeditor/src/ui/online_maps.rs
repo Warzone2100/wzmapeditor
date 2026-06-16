@@ -134,10 +134,16 @@ impl OnlineMapsState {
         let tx = self.tx.as_ref().expect("sender available").clone();
         let user_dirs = super::map_browser::wz2100_user_map_dirs();
 
-        std::thread::spawn(move || {
+        let work = move || {
             let result = fetch_map_list(&user_dirs);
             let _ = tx.send(FetchResult::MapList(result));
-        });
+        };
+        // No usable OS threads in the browser; the web `fetch_*` helpers are
+        // stubs, so run them inline and let `poll` drain the result.
+        #[cfg(not(target_arch = "wasm32"))]
+        std::thread::spawn(work);
+        #[cfg(target_arch = "wasm32")]
+        work();
     }
 
     const MAX_PREVIEW_IN_FLIGHT: u32 = 8;
@@ -166,10 +172,14 @@ impl OnlineMapsState {
         let tx = self.tx.as_ref().expect("sender available").clone();
         let url = PREVIEW_URL_TEMPLATE.replace("{hash}", hash);
 
-        std::thread::spawn(move || {
+        let work = move || {
             let result = fetch_bytes(&url);
             let _ = tx.send(FetchResult::Preview(index, result));
-        });
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        std::thread::spawn(work);
+        #[cfg(target_arch = "wasm32")]
+        work();
     }
 
     pub fn start_download(&self, index: usize, repo: &str, path: &str, filename: &str) {
@@ -180,10 +190,14 @@ impl OnlineMapsState {
         let user_dirs = super::map_browser::wz2100_user_map_dirs();
         let filename = filename.to_string();
 
-        std::thread::spawn(move || {
+        let work = move || {
             let result = download_map(&url, &user_dirs, &filename);
             let _ = tx.send(FetchResult::Download(index, result));
-        });
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        std::thread::spawn(work);
+        #[cfg(target_arch = "wasm32")]
+        work();
     }
 
     /// Free thumbnails for maps not in the current visible set, preventing

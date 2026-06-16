@@ -321,12 +321,17 @@ fn start_generation(app: &mut EditorApp, ctx: &egui::Context) {
     let label_clone = label.clone();
     let ctx_clone = ctx.clone();
 
-    std::thread::spawn(move || {
+    let work = move || {
         let reporter = ProgressReporter::new(progress_clone, label_clone);
         let result = super::pipeline::generate_map(&config, &reporter);
         let _ = tx.send(result);
         ctx_clone.request_repaint();
-    });
+    };
+    // No usable OS threads in the browser; generation is pure CPU, run inline.
+    #[cfg(not(target_arch = "wasm32"))]
+    std::thread::spawn(work);
+    #[cfg(target_arch = "wasm32")]
+    work();
 
     app.generator_dialog.gen_rx = Some(rx);
     app.generator_dialog.progress = Some(progress);

@@ -76,13 +76,31 @@ pub(crate) fn prepare_models_background(
         });
     });
 
+    // No usable OS threads in the browser, so build the index once and
+    // prepare each model sequentially into the same channel the caller polls.
+    #[cfg(target_arch = "wasm32")]
+    {
+        let work = move || {
+            let file_index = build_pie_file_index(assets.as_ref());
+            log::info!("PIE file index: {} files found", file_index.len());
+            for imd_name in names {
+                let prepared =
+                    prepare_model_offline(&imd_name, &file_index, assets.as_ref(), tileset_index);
+                if tx.send(prepared).is_err() {
+                    break;
+                }
+            }
+        };
+        work();
+    }
+
     rx
 }
 
 /// Spawn a background thread that pre-parses every PIE referenced by stats
 /// and ships back a connector-only map for the main thread to merge.
 pub(crate) fn precache_connectors_background(
-    data_dir: &Path,
+    assets: Arc<dyn crate::assets::AssetSource>,
     stats: &StatsDatabase,
     already_cached: &HashSet<String>,
 ) -> mpsc::Receiver<HashMap<String, Vec<glam::Vec3>>> {
@@ -123,14 +141,9 @@ pub(crate) fn precache_connectors_background(
         .filter(|n| !already_cached.contains(n))
         .collect();
 
-    let data_dir = data_dir.to_path_buf();
-
-    std::thread::spawn(move || {
-        let file_index = build_pie_file_index(&data_dir);
-        log::info!(
-            "Connector precache: parsing {} PIE files on background thread",
-            names.len()
-        );
+    let work = move || {
+        let file_index = build_pie_file_index(assets.as_ref());
+        log::info!("Connector precache: parsing {} PIE files", names.len());
 
         let mut connectors = HashMap::new();
         for name in &names {
@@ -158,7 +171,13 @@ pub(crate) fn precache_connectors_background(
 
         log::info!("Connector precache complete: {} entries", connectors.len());
         let _ = tx.send(connectors);
-    });
+    };
+
+    // No usable OS threads in the browser; run the precache inline instead.
+    #[cfg(not(target_arch = "wasm32"))]
+    std::thread::spawn(work);
+    #[cfg(target_arch = "wasm32")]
+    work();
 
     rx
 }

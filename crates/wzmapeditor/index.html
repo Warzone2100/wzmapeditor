@@ -22,6 +22,10 @@
     <link data-trunk rel="copy-file" href="vendor/basis/basis_transcoder.js" />
     <link data-trunk rel="copy-file" href="vendor/basis/basis_transcoder.wasm" />
 
+    <!-- Bundle the slimmed WZ2100 data into dist/ so the web build fetches
+         base.wz/mp.wz/classic.wz from /data/ with no user upload required. -->
+    <link data-trunk rel="copy-dir" href="data" />
+
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#909090" />
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#404040" />
 

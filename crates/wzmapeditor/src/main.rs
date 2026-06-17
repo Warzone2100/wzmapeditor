@@ -211,6 +211,8 @@ fn main() {
             .document()
             .expect("no document");
 
+        document.set_title(concat!("wzmapeditor - ", env!("CARGO_PKG_VERSION")));
+
         let canvas = document
             .get_element_by_id("the_canvas_id")
             .expect("missing #the_canvas_id element")

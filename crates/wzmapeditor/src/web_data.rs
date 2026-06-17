@@ -171,6 +171,7 @@ fn apply(app: &mut EditorApp, archives: WebDataArchives) {
     };
 
     let vfs = std::sync::Arc::new(vfs);
+    let has_high = vfs.has_high();
     app.rt.web_vfs = Some(vfs.clone());
     let assets: std::sync::Arc<dyn crate::assets::AssetSource> = vfs;
     app.assets = Some(assets);
@@ -181,6 +182,16 @@ fn apply(app: &mut EditorApp, archives: WebDataArchives) {
     // HQ terrain needs `high.wz` (KTX2), which the user uploads separately; the
     // toggle stays off until both the archive and the wasm decoder are present.
     app.has_hq_textures = false;
+    // Mirror the native `set_data_dir` demotion, which the web path skips:
+    // without high.wz the decoder can't run, so drop a High/Remastered
+    // preference (the default on a fresh session, or one restored from config)
+    // to Classic. Otherwise the disabled "Remastered" radio shows as selected.
+    if !has_high
+        && app.render_settings.terrain_quality == crate::viewport::renderer::TerrainQuality::High
+    {
+        app.render_settings.terrain_quality = crate::viewport::renderer::TerrainQuality::Classic;
+        app.terrain_dirty = true;
+    }
 
     app.rt.tileset_load_attempted = false;
     app.rt.stats_load_attempted = false;

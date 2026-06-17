@@ -39,6 +39,11 @@ const CLASSIC_WZ: &str = "terrain_overrides/classic.wz";
 /// (HQ is opt-in), so it is read from cache only — never from the network.
 const HIGH_WZ_CACHE_KEY: &str = "user-upload/high.wz";
 
+/// Cache Storage keys for the last-opened map — the archive bytes and its name
+/// stem — stored together so a reload can reopen where the user left off.
+const LAST_MAP_CACHE_KEY: &str = "user-upload/last-map.wz";
+const LAST_MAP_NAME_KEY: &str = "user-upload/last-map.name";
+
 /// Upper bound on the up-front buffer reservation for a download. The
 /// `content-length` header is server-supplied and only a progress hint, so it
 /// is clamped before use as a capacity: on wasm `usize` is 32-bit, and a bogus
@@ -120,6 +125,7 @@ pub(crate) fn begin_load(app: &mut EditorApp, ctx: &egui::Context) {
         *error = None;
     }
     request_persistent_storage();
+    begin_last_map_restore(app, ctx);
 
     let ctx = ctx.clone();
     spawn_local(async move {
@@ -223,6 +229,74 @@ async fn load_cached_high() -> Option<Vec<u8>> {
     let cache = cache::open(CACHE_NAME).await?;
     let resp = cache::match_url(&cache, HIGH_WZ_CACHE_KEY).await?;
     cache::read_response_bytes(&resp).await
+}
+
+/// Persist the just-opened map (name + bytes) so a reload can reopen it.
+///
+/// Best-effort and fire-and-forget: a write failure only costs the auto-reopen,
+/// never the open itself, so errors are swallowed.
+pub(crate) fn cache_last_map(name: &str, bytes: Vec<u8>) {
+    let name = name.to_string();
+    spawn_local(async move {
+        let Some(cache) = cache::open(CACHE_NAME).await else {
+            return;
+        };
+        cache::put_bytes(&cache, LAST_MAP_NAME_KEY, name.into_bytes()).await;
+        cache::put_bytes(&cache, LAST_MAP_CACHE_KEY, bytes).await;
+    });
+}
+
+/// Read the last-opened map (name + bytes) back from Cache Storage, if present.
+async fn load_cached_last_map() -> Option<(String, Vec<u8>)> {
+    let cache = cache::open(CACHE_NAME).await?;
+    let name_resp = cache::match_url(&cache, LAST_MAP_NAME_KEY).await?;
+    let name = String::from_utf8(cache::read_response_bytes(&name_resp).await?).ok()?;
+    let resp = cache::match_url(&cache, LAST_MAP_CACHE_KEY).await?;
+    let bytes = cache::read_response_bytes(&resp).await?;
+    Some((name, bytes))
+}
+
+/// Start reading the cached last-opened map in the background. The result is
+/// parked on [`RuntimeTasks`](crate::startup::RuntimeTasks) until the editor
+/// finishes booting, where [`poll_last_map_restore`] reopens it.
+fn begin_last_map_restore(app: &mut EditorApp, ctx: &egui::Context) {
+    if app.rt.web_last_map_restore_attempted || app.rt.web_last_map_rx.is_some() {
+        return;
+    }
+    let (tx, rx) = mpsc::channel();
+    app.rt.web_last_map_rx = Some(rx);
+    let ctx = ctx.clone();
+    spawn_local(async move {
+        let _ = tx.send(load_cached_last_map().await);
+        ctx.request_repaint();
+    });
+}
+
+/// Reopen the cached last map once the editor has finished booting.
+///
+/// One-shot: it parks the async read result, then reopens the map only after
+/// the initial load completes, and never clobbers a map the user opened during
+/// startup.
+pub(crate) fn poll_last_map_restore(app: &mut EditorApp, ctx: &egui::Context) {
+    if app.rt.web_last_map_restore_attempted {
+        return;
+    }
+    if app.rt.web_last_map_rx.is_some() {
+        match drain_once(&mut app.rt.web_last_map_rx, ctx, false) {
+            Drain::Pending => return,
+            Drain::Ready(result) => app.rt.web_last_map_pending = result,
+            Drain::Closed => {}
+        }
+    }
+    if !app.rt.web_initial_load_done {
+        return;
+    }
+    app.rt.web_last_map_restore_attempted = true;
+    if app.document.is_none()
+        && let Some((name, bytes)) = app.rt.web_last_map_pending.take()
+    {
+        crate::web_map_io::restore(app, &name, &bytes);
+    }
 }
 
 /// Fetch one archive, preferring a cached copy. `Ok(None)` means the server

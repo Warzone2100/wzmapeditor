@@ -62,17 +62,35 @@ pub(crate) fn poll(app: &mut EditorApp, ctx: &egui::Context) {
 }
 
 fn load(app: &mut EditorApp, picked: PickedMap) {
-    match wz_maplib::io_wz::load_from_wz_reader(Cursor::new(picked.bytes), &picked.name_hint) {
+    let PickedMap { name_hint, bytes } = picked;
+    // Parse from a borrowed slice so the owned bytes survive for caching.
+    match wz_maplib::io_wz::load_from_wz_reader(Cursor::new(bytes.as_slice()), &name_hint) {
         Ok(map) => {
             // No filesystem path exists on the web; synthesize a save path from
             // the map name so a later Ctrl+S re-downloads without re-prompting.
-            let save = std::path::PathBuf::from(format!("{}.wz", picked.name_hint));
+            let save = std::path::PathBuf::from(format!("{name_hint}.wz"));
             app.load_map(map, None, Some(save), None);
+            crate::web_data::cache_last_map(&name_hint, bytes);
         }
         Err(e) => {
-            let path = std::path::PathBuf::from(format!("{}.wz", picked.name_hint));
+            let path = std::path::PathBuf::from(format!("{name_hint}.wz"));
             app.report_wz_load_error(&path, &e);
         }
+    }
+}
+
+/// Reopen the last map, restored from Cache Storage at startup.
+///
+/// Unlike [`load`], a parse failure is swallowed — a stale or corrupt cache
+/// entry must not block boot — and the bytes are not written back to the cache.
+pub(crate) fn restore(app: &mut EditorApp, name_hint: &str, bytes: &[u8]) {
+    match wz_maplib::io_wz::load_from_wz_reader(Cursor::new(bytes), name_hint) {
+        Ok(map) => {
+            let save = std::path::PathBuf::from(format!("{name_hint}.wz"));
+            app.load_map(map, None, Some(save), None);
+            app.log(format!("Restored last map: {name_hint}"));
+        }
+        Err(e) => log::warn!("Discarding unreadable cached map '{name_hint}': {e}"),
     }
 }
 

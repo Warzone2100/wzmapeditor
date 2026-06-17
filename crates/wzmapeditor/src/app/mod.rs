@@ -877,6 +877,9 @@ impl eframe::App for EditorApp {
 
         poll_background_tasks(ctx, self);
         auto_load_assets(ctx, self);
+        // Reopen the last map from Cache Storage once the editor has booted.
+        #[cfg(target_arch = "wasm32")]
+        crate::web_data::poll_last_map_restore(self, ctx);
         tick_validation_cooldown(self);
         show_dialogs(ctx, self);
         dispatch_keyboard_actions(ctx, self);

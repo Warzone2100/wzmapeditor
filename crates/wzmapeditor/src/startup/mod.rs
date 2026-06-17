@@ -21,6 +21,10 @@ type HqPrefetch = (
     mpsc::Receiver<HashMap<String, Vec<u8>>>,
 );
 
+/// A cached last-opened map: its name stem and raw `.wz` archive bytes.
+#[cfg(target_arch = "wasm32")]
+type CachedMap = (String, Vec<u8>);
+
 /// All in-flight background loading state for startup and mid-session reloads.
 pub struct RuntimeTasks {
     /// Extraction progress in thousandths (0-1000) while base.wz extracts.
@@ -94,6 +98,17 @@ pub struct RuntimeTasks {
     /// mid-session reloads use the compact bottom-left indicator instead.
     #[cfg(target_arch = "wasm32")]
     pub web_initial_load_done: bool,
+    /// Delivers the cached last-opened map (name + bytes) read at startup, or
+    /// `None` when nothing was cached.
+    #[cfg(target_arch = "wasm32")]
+    pub web_last_map_rx: Option<mpsc::Receiver<Option<CachedMap>>>,
+    /// The cached last-opened map, parked until the editor finishes booting.
+    #[cfg(target_arch = "wasm32")]
+    pub web_last_map_pending: Option<CachedMap>,
+    /// One-shot latch: set once the startup auto-reopen has run or been skipped,
+    /// so it never fires twice or clobbers a map the user opened during boot.
+    #[cfg(target_arch = "wasm32")]
+    pub web_last_map_restore_attempted: bool,
 }
 
 impl RuntimeTasks {
@@ -134,6 +149,12 @@ impl RuntimeTasks {
             web_hq_skip_cache: false,
             #[cfg(target_arch = "wasm32")]
             web_initial_load_done: false,
+            #[cfg(target_arch = "wasm32")]
+            web_last_map_rx: None,
+            #[cfg(target_arch = "wasm32")]
+            web_last_map_pending: None,
+            #[cfg(target_arch = "wasm32")]
+            web_last_map_restore_attempted: false,
         }
     }
 

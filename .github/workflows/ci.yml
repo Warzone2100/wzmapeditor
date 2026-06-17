@@ -9,7 +9,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  create-draft-release:
+  create-release:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
@@ -18,7 +18,7 @@ jobs:
     - uses: actions/checkout@v6
       with:
         fetch-depth: 0
-    - name: Compose grouped release notes and create draft
+    - name: Compose grouped release notes and create the release
       shell: bash
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -64,12 +64,12 @@ jobs:
         echo "----- end preview -----"
 
         if ! gh release view "$TAG" >/dev/null 2>&1; then
-          gh release create "$TAG" --draft --notes-file "$NOTES" --title "$TAG"
+          gh release create "$TAG" --notes-file "$NOTES" --title "$TAG"
         fi
 
   build:
-    needs: [create-draft-release]
-    if: ${{ !cancelled() && (needs.create-draft-release.result == 'success' || needs.create-draft-release.result == 'skipped') }}
+    needs: [create-release]
+    if: ${{ !cancelled() && (needs.create-release.result == 'success' || needs.create-release.result == 'skipped') }}
 
     strategy:
       matrix:
@@ -135,7 +135,7 @@ jobs:
       with:
         path: ${{ steps.cargo_build.outputs.BUILT_ARCHIVE }}
         archive: false
-    - name: Attach to draft release
+    - name: Attach to release
       if: startsWith(github.ref, 'refs/tags/')
       shell: bash
       env:
@@ -146,3 +146,73 @@ jobs:
         gh release upload "$TAG" \
           "${{ steps.cargo_build.outputs.BUILT_ARCHIVE }}" \
           --clobber
+
+  web-bundle:
+    needs: [create-release]
+    if: ${{ !cancelled() && (needs.create-release.result == 'success' || needs.create-release.result == 'skipped') }}
+    name: Web bundle
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    env:
+      RUSTUP_TOOLCHAIN: '1.95.0'
+
+    steps:
+    - uses: actions/checkout@v6
+    # The web build lives on the web port branch (and, once merged, main). Skip
+    # gracefully on refs that don't have it so native-only tags/branches stay
+    # green; the rest of the job no-ops when there's nothing to build.
+    - name: Detect web build
+      id: detect
+      shell: bash
+      run: |
+        if [ -f crates/wzmapeditor/index.html ]; then
+          echo "present=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "present=false" >> "$GITHUB_OUTPUT"
+          echo "No web build on this ref; skipping."
+        fi
+    - uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7
+      if: steps.detect.outputs.present == 'true'
+      with:
+        rustflags: ''
+    - name: Add wasm target
+      if: steps.detect.outputs.present == 'true'
+      run: rustup target add wasm32-unknown-unknown
+    - name: Install Trunk
+      if: steps.detect.outputs.present == 'true'
+      run: |
+        curl -fsSL https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz \
+          | tar -xzf - -C "$HOME/.cargo/bin"
+        trunk --version
+    # Run from the crate dir so trunk resolves the package from the local
+    # Cargo.toml/Trunk.toml, not the workspace's virtual root manifest. Root
+    # relative (`/`) so the same bundle serves any domain root.
+    - name: Build web bundle
+      if: steps.detect.outputs.present == 'true'
+      working-directory: crates/wzmapeditor
+      run: trunk build --release --public-url "/" index.html
+    - name: Package web bundle
+      if: steps.detect.outputs.present == 'true'
+      shell: bash
+      run: |
+        ( cd crates/wzmapeditor/dist && zip -qr "$GITHUB_WORKSPACE/wzmapeditor-web.zip" . )
+        ls -lh wzmapeditor-web.zip
+    - name: Upload artifact
+      if: steps.detect.outputs.present == 'true'
+      uses: actions/upload-artifact@v7
+      with:
+        name: wzmapeditor-web
+        path: wzmapeditor-web.zip
+        archive: false
+    - name: Attach to release
+      if: ${{ steps.detect.outputs.present == 'true' && startsWith(github.ref, 'refs/tags/') }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_REPO: ${{ github.repository }}
+      run: |
+        TAG="${GITHUB_REF#refs/tags/}"
+        gh release upload "$TAG" wzmapeditor-web.zip --clobber

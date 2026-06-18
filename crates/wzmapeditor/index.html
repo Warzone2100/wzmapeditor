@@ -33,9 +33,27 @@
          actions), so the browser's native context menu is never wanted. eframe
          suppresses it on the canvas, but only when it can lock the app runner,
          so it leaks on a right-button release during a camera drag. This
-         capture-phase listener has no such gate. -->
+         capture-phase listener has no such gate.
+
+         Shift+right-click is a browser escape hatch (WHATWG-sanctioned) that
+         opens the native menu regardless of preventDefault. While that menu is
+         open the page stops receiving keyup/pointerup, so the fly camera's held
+         keys and right button get stuck "down" and it keeps moving. eframe never
+         notices: the canvas stays document.activeElement, so it keeps reporting
+         focus. We force the recovery — release the right button (honored because
+         egui still thinks a pointer is down), then blur the canvas so eframe's
+         focus-loss path clears the held keys. -->
     <script>
-        addEventListener("contextmenu", function (e) { e.preventDefault(); }, true);
+        addEventListener("contextmenu", function (e) {
+            e.preventDefault();
+            if (!e.shiftKey) return;
+            const canvas = document.getElementById("the_canvas_id");
+            if (!canvas) return;
+            canvas.dispatchEvent(new PointerEvent("pointerup", {
+                button: 2, bubbles: true, clientX: e.clientX, clientY: e.clientY,
+            }));
+            canvas.blur();
+        }, true);
     </script>
 
     <style>

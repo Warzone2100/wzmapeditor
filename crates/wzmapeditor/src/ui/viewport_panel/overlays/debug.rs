@@ -5,7 +5,7 @@ use egui::{Align2, Color32, CornerRadius, FontId, Margin, Rect, RichText, Stroke
 use crate::app::{EditorApp, SelectedObject};
 use crate::viewport::camera::Camera;
 
-pub(super) fn draw_info_bar(ui: &mut Ui, app: &mut EditorApp, camera: Option<&Camera>, rect: Rect) {
+pub(super) fn draw_info_bar(ui: &mut Ui, app: &mut EditorApp, rect: Rect) {
     let Some(doc) = app.document.as_ref() else {
         return;
     };
@@ -16,9 +16,6 @@ pub(super) fn draw_info_bar(ui: &mut Ui, app: &mut EditorApp, camera: Option<&Ca
         "Map: {}x{} | {:?}",
         map.width, map.height, app.tool_state.active_tool
     );
-    if let Some(cam) = camera {
-        write!(info, " | Spd: {:.0}", cam.move_speed).unwrap();
-    }
     if let Some((tx, ty)) = app.hovered_tile {
         write!(info, " | Tile: ({tx}, {ty})").unwrap();
         if let Some(tile) = map.tile(tx, ty) {
@@ -81,6 +78,19 @@ pub(super) fn draw_info_bar(ui: &mut Ui, app: &mut EditorApp, camera: Option<&Ca
         Align2::LEFT_BOTTOM,
         help,
         FontId::proportional(11.0),
+        Color32::from_rgba_premultiplied(200, 200, 200, 180),
+    );
+}
+
+pub(super) fn draw_speed_readout(ui: &Ui, camera: Option<&Camera>, rect: Rect) {
+    let Some(cam) = camera else {
+        return;
+    };
+    ui.painter_at(rect).text(
+        rect.center_top() + egui::vec2(0.0, 8.0),
+        Align2::CENTER_TOP,
+        format!("Speed: {:.1}", cam.speed_level()),
+        FontId::proportional(12.0),
         Color32::from_rgba_premultiplied(200, 200, 200, 180),
     );
 }

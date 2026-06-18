@@ -5,6 +5,12 @@ use glam::{Mat4, Vec3};
 /// Default mouse look sensitivity (radians per pixel of drag).
 const DEFAULT_LOOK_SENSITIVITY: f32 = 0.003;
 
+/// Fly-speed bounds in world units per second. Scroll adjusts `move_speed`
+/// multiplicatively within this range; the on-screen readout maps it onto a
+/// 1–10 scale via [`Camera::speed_level`].
+const MIN_MOVE_SPEED: f32 = 200.0;
+const MAX_MOVE_SPEED: f32 = 20_000.0;
+
 /// Free-look camera for the 3D viewport.
 #[derive(Clone, Debug)]
 pub struct Camera {
@@ -121,12 +127,22 @@ impl Camera {
         self.forward_xz().cross(Vec3::Y).normalize_or_zero()
     }
 
+    /// Current fly speed as a 1–10 scale for display.
+    ///
+    /// `move_speed` spans [`MIN_MOVE_SPEED`, `MAX_MOVE_SPEED`] multiplicatively,
+    /// so a log scale keeps each scroll notch a constant step and maps the
+    /// bounds to exactly 1 and 10.
+    pub fn speed_level(&self) -> f32 {
+        let span = (MAX_MOVE_SPEED / MIN_MOVE_SPEED).ln();
+        let t = (self.move_speed / MIN_MOVE_SPEED).ln() / span;
+        (1.0 + 9.0 * t).clamp(1.0, 10.0)
+    }
+
     /// Process input - Unity scene view style:
     /// - Hold RMB + WASD/QE to fly
     /// - Hold RMB + drag to look around
     /// - Middle-click drag to pan
     /// - RMB or Shift + scroll to change camera move speed
-    /// - Shift for faster movement
     pub fn process_input(&mut self, response: &egui::Response, ctx: &egui::Context, dt: f32) {
         let rmb_held = response.dragged_by(egui::PointerButton::Secondary)
             || ctx.input(|i| i.pointer.button_down(egui::PointerButton::Secondary));
@@ -169,17 +185,12 @@ impl Camera {
                 // the same final factor. A bare sign-based factor
                 // compounded once per frame, which ran away at 400 fps.
                 let factor = (raw_scroll * (1.2_f32.ln() / 50.0)).exp();
-                self.move_speed = (self.move_speed * factor).clamp(200.0, 50_000.0);
+                self.move_speed = (self.move_speed * factor).clamp(MIN_MOVE_SPEED, MAX_MOVE_SPEED);
             }
         }
 
         if rmb_held {
-            let speed_multiplier = if ctx.input(|i| i.modifiers.shift) {
-                3.0
-            } else {
-                1.0
-            };
-            let move_amount = self.move_speed * dt * speed_multiplier;
+            let move_amount = self.move_speed * dt;
 
             let forward = self.forward_3d();
             let right = self.right_xz();
@@ -291,5 +302,25 @@ mod tests {
         let cam = Camera::for_map(10, 10);
         let proj = cam.projection_matrix();
         assert!(proj.determinant().abs() > 1e-6);
+    }
+
+    #[test]
+    fn speed_level_maps_bounds_to_1_and_10() {
+        let mut cam = Camera::for_map(10, 10);
+
+        cam.move_speed = MIN_MOVE_SPEED;
+        assert!((cam.speed_level() - 1.0).abs() < 1e-4);
+
+        cam.move_speed = MAX_MOVE_SPEED;
+        assert!((cam.speed_level() - 10.0).abs() < 1e-4);
+
+        // Geometric mean of the bounds sits at the midpoint of the log scale.
+        cam.move_speed = (MIN_MOVE_SPEED * MAX_MOVE_SPEED).sqrt();
+        assert!((cam.speed_level() - 5.5).abs() < 1e-4);
+
+        cam.move_speed = MIN_MOVE_SPEED * 0.1;
+        assert!((cam.speed_level() - 1.0).abs() < 1e-4);
+        cam.move_speed = MAX_MOVE_SPEED * 10.0;
+        assert!((cam.speed_level() - 10.0).abs() < 1e-4);
     }
 }

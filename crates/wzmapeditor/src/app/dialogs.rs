@@ -138,7 +138,7 @@ pub(super) fn show_new_map_dialog(ctx: &egui::Context, app: &mut EditorApp) {
                 }
                 map.tileset = ts.as_str().to_string();
                 map.terrain_types = Some(wz_maplib::TerrainTypeData {
-                    terrain_types: ts.default_terrain_types(),
+                    terrain_types: ts.full_terrain_types(),
                 });
                 app.load_map(map, None, None, None);
                 // Signal close - picked up by sync-back below.

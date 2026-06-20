@@ -553,6 +553,42 @@ impl Tileset {
             ],
         }
     }
+
+    /// Full canonical per-texture terrain-type table for the tileset, matching
+    /// the standard WZ2100 stock maps (Arizona/Urban have 96 textures, Rockies
+    /// 90). New maps embed this so every cliff and water texture is typed
+    /// correctly for in-game pathfinding and the tileset browser — unlike
+    /// [`Self::default_terrain_types`], which only covers the first few.
+    pub fn full_terrain_types(self) -> Vec<wz_maplib::TerrainType> {
+        #[rustfmt::skip]
+        let ids: &[u16] = match self {
+            Self::Arizona => &[
+                1, 0, 2, 2, 0, 2, 2, 2, 2, 1, 1, 1, 0, 7, 7, 7, 7, 7, 8, 6,
+                4, 4, 6, 3, 3, 3, 2, 4, 1, 4, 7, 7, 7, 7, 4, 4, 2, 2, 2, 2,
+                1, 4, 0, 4, 4, 8, 8, 2, 4, 4, 4, 4, 4, 4, 4, 9, 9, 6, 9, 6,
+                4, 4, 9, 9, 9, 9, 9, 9, 9, 9, 9, 8, 4, 4, 4, 8, 5, 6, 2, 2,
+                2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0,
+            ],
+            Self::Urban => &[
+                2, 2, 2, 2, 1, 2, 2, 1, 1, 1, 1, 1, 1, 7, 7, 7, 7, 7, 1, 8,
+                4, 4, 0, 7, 7, 7, 7, 4, 4, 2, 4, 0, 2, 0, 0, 2, 4, 4, 0, 4,
+                6, 2, 6, 6, 6, 6, 6, 6, 4, 6, 3, 4, 4, 2, 2, 9, 9, 9, 2, 4,
+                2, 4, 9, 9, 9, 9, 9, 8, 8, 8, 8, 4, 2, 0, 4, 4, 2, 2, 2, 3,
+                2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0,
+            ],
+            Self::Rockies => &[
+                0, 0, 2, 2, 2, 2, 2, 2, 1, 8, 11, 2, 11, 6, 7, 7, 7, 7, 8, 6,
+                1, 2, 6, 11, 11, 0, 11, 1, 1, 8, 8, 7, 7, 7, 0, 0, 1, 6, 0, 4,
+                5, 11, 8, 5, 8, 8, 8, 11, 11, 1, 1, 1, 1, 1, 8, 9, 9, 5, 2, 6,
+                6, 8, 9, 8, 10, 10, 11, 11, 8, 8, 10, 8, 1, 10, 0, 10, 8, 8, 8, 6,
+                2, 2, 2, 2, 2, 2, 2, 2, 2, 0,
+            ],
+        };
+        ids.iter()
+            .copied()
+            .map(wz_maplib::TerrainType::from)
+            .collect()
+    }
 }
 
 impl std::fmt::Display for Tileset {
@@ -760,6 +796,40 @@ fn dirs_next() -> Option<PathBuf> {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn full_terrain_types_match_stock_maps() {
+        use wz_maplib::TerrainType;
+
+        let indices_of = |ts: Tileset, want: TerrainType| -> Vec<usize> {
+            ts.full_terrain_types()
+                .into_iter()
+                .enumerate()
+                .filter(|&(_, t)| t == want)
+                .map(|(i, _)| i)
+                .collect()
+        };
+        let cliffs = |ts: Tileset| indices_of(ts, TerrainType::Cliffface);
+        let water = |ts: Tileset| indices_of(ts, TerrainType::Water);
+
+        // Lengths and cliff/water indices taken from the canonical stock
+        // ttypes.ttp shipped with WZ2100 (the plurality per tileset).
+        assert_eq!(Tileset::Arizona.full_terrain_types().len(), 96);
+        assert_eq!(Tileset::Urban.full_terrain_types().len(), 96);
+        assert_eq!(Tileset::Rockies.full_terrain_types().len(), 90);
+        assert_eq!(cliffs(Tileset::Arizona), vec![18, 45, 46, 71, 75]);
+        assert_eq!(
+            water(Tileset::Arizona),
+            vec![13, 14, 15, 16, 17, 30, 31, 32, 33]
+        );
+        assert_eq!(cliffs(Tileset::Urban), vec![19, 67, 68, 69, 70]);
+
+        // The first three entries are the tileset-detection signature, so the
+        // full table must agree with the short default there.
+        for ts in [Tileset::Arizona, Tileset::Urban, Tileset::Rockies] {
+            assert_eq!(ts.full_terrain_types()[..3], ts.default_terrain_types()[..]);
+        }
+    }
 
     #[test]
     fn wz2100_executable_finds_exe_in_same_dir() {

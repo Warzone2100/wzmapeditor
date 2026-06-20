@@ -349,22 +349,20 @@ pub fn show_tileset_browser(
     let spacing = 3.0;
     let mut toggle_tile: Option<u16> = None;
 
-    let is_cliff = |tile_id: u16| -> bool {
-        terrain_types.is_some_and(|types| {
-            types
-                .get(tile_id as usize)
-                .copied()
-                .is_some_and(|t| t == wz_maplib::TerrainType::Cliffface)
-        })
+    let terrain_of = |tile_id: u16| -> Option<wz_maplib::TerrainType> {
+        terrain_types.and_then(|types| types.get(tile_id as usize).copied())
     };
 
-    let (regular_ids, cliff_ids): (Vec<u16>, Vec<u16>) = if terrain_types.is_some() {
-        ts.iter_tiles()
-            .map(|(id, _)| id)
-            .partition(|&id| !is_cliff(id))
-    } else {
-        (ts.iter_tiles().map(|(id, _)| id).collect(), Vec::new())
-    };
+    let mut regular_ids = Vec::new();
+    let mut cliff_ids = Vec::new();
+    let mut water_ids = Vec::new();
+    for (id, _) in ts.iter_tiles() {
+        match terrain_of(id) {
+            Some(wz_maplib::TerrainType::Cliffface) => cliff_ids.push(id),
+            Some(wz_maplib::TerrainType::Water) => water_ids.push(id),
+            _ => regular_ids.push(id),
+        }
+    }
 
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
@@ -399,6 +397,28 @@ pub fn show_tileset_browser(
                 render_tile_grid(
                     ui,
                     &cliff_ids,
+                    ts,
+                    tile_size,
+                    spacing,
+                    single_mode,
+                    selected_idx,
+                    selected_stroke,
+                    tool_state,
+                    &mut toggle_tile,
+                );
+            }
+
+            if !water_ids.is_empty() {
+                ui.add_space(6.0);
+                ui.label(
+                    egui::RichText::new("Water")
+                        .small()
+                        .color(ui.visuals().weak_text_color()),
+                );
+                ui.add_space(2.0);
+                render_tile_grid(
+                    ui,
+                    &water_ids,
                     ts,
                     tile_size,
                     spacing,

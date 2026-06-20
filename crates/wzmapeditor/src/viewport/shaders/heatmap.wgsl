@@ -1,4 +1,4 @@
-// Propulsion speed heatmap overlay: red (slow) to yellow (100%) to green (fast).
+// Propulsion speed heatmap overlay: red (0%/impassable) to yellow (100%) to green (150%).
 
 struct Uniforms {
     mvp: mat4x4<f32>,
@@ -62,22 +62,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let terrain_type = terrain_type_lut[tile_idx / 4u][tile_idx % 4u];
     let speed = get_speed(terrain_type);
 
-    // Impassable terrain (cliff faces for all ground units; water for non-hover)
-    // is uploaded as speed 0. Show it as a distinct dark "blocked" tile rather
-    // than the slow-end red, which would read as merely slow.
-    if speed <= 0.0 {
-        return vec4<f32>(0.06, 0.06, 0.08, 0.6);
-    }
-
-    // 50% maps to t=0 (red), 100% to t=0.5 (yellow), 150% to t=1 (green).
-    let t = clamp((speed - 0.5) / 1.0, 0.0, 1.0);
-
+    // Impassable terrain (cliff faces for all ground units; water for
+    // non-hover) is uploaded as speed 0, so it reads as the red 0% end of the
+    // scale. Merely slow terrain (~50%) lands at orange, keeping it distinct.
     var color: vec3<f32>;
-    if t < 0.5 {
-        let s = t * 2.0;
+    if speed < 1.0 {
+        let s = clamp(speed, 0.0, 1.0);
         color = mix(vec3<f32>(0.9, 0.15, 0.1), vec3<f32>(0.95, 0.85, 0.1), s);
     } else {
-        let s = (t - 0.5) * 2.0;
+        let s = clamp((speed - 1.0) / 0.5, 0.0, 1.0);
         color = mix(vec3<f32>(0.95, 0.85, 0.1), vec3<f32>(0.1, 0.8, 0.2), s);
     }
 

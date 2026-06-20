@@ -157,15 +157,16 @@ pub(super) fn draw(ui: &mut Ui, app: &mut EditorApp, rect: Rect) {
     let step_h = HEATMAP_LEGEND_BAR_SIZE.y / steps as f32;
     for s in 0..steps {
         let t = 1.0 - (s as f32 / (steps - 1) as f32);
-        let (r, g, b) = if t < 0.5 {
-            let s_val = t * 2.0;
+        let speed = t * 1.5;
+        let (r, g, b) = if speed < 1.0 {
+            let s_val = speed.clamp(0.0, 1.0);
             (
                 lerp_u8(230, 242, s_val),
                 lerp_u8(38, 217, s_val),
                 lerp_u8(25, 25, s_val),
             )
         } else {
-            let s_val = (t - 0.5) * 2.0;
+            let s_val = ((speed - 1.0) / 0.5).clamp(0.0, 1.0);
             (
                 lerp_u8(242, 25, s_val),
                 lerp_u8(217, 204, s_val),
@@ -192,6 +193,7 @@ pub(super) fn draw(ui: &mut Ui, app: &mut EditorApp, rect: Rect) {
     let label_font = FontId::proportional(9.0);
     let label_color = Color32::from_rgba_unmultiplied(220, 220, 220, 220);
     let label_x = bar_rect.left() - 3.0;
+    let bar_h = HEATMAP_LEGEND_BAR_SIZE.y;
     painter.text(
         egui::pos2(label_x, bar_rect.top()),
         egui::Align2::RIGHT_TOP,
@@ -200,16 +202,23 @@ pub(super) fn draw(ui: &mut Ui, app: &mut EditorApp, rect: Rect) {
         label_color,
     );
     painter.text(
-        egui::pos2(label_x, bar_rect.center().y),
+        egui::pos2(label_x, bar_rect.top() + bar_h / 3.0),
         egui::Align2::RIGHT_CENTER,
         "100%",
         label_font.clone(),
         label_color,
     );
     painter.text(
+        egui::pos2(label_x, bar_rect.top() + bar_h * 2.0 / 3.0),
+        egui::Align2::RIGHT_CENTER,
+        "50%",
+        label_font.clone(),
+        label_color,
+    );
+    painter.text(
         egui::pos2(label_x, bar_rect.bottom()),
         egui::Align2::RIGHT_BOTTOM,
-        "50%",
+        "0%",
         label_font,
         label_color,
     );

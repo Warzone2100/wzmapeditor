@@ -11,6 +11,17 @@ const DEFAULT_LOOK_SENSITIVITY: f32 = 0.003;
 const MIN_MOVE_SPEED: f32 = 200.0;
 const MAX_MOVE_SPEED: f32 = 20_000.0;
 
+/// Fly-speed multiplier per wheel notch. The full 200–20000 range spans about
+/// 25 notches (`ln(100) / ln(1.2)`).
+const SPEED_STEP_PER_NOTCH: f32 = 1.2;
+/// Wheel `Point` units (logical pixels) per notch. Browsers report wheel
+/// scroll in pixels (~100 per notch); native winit reports lines instead.
+/// Normalizing both to notches keeps the speed step consistent across web and
+/// native, which otherwise diverge by ~50x.
+const SCROLL_POINTS_PER_NOTCH: f32 = 100.0;
+/// Notches per `Page` wheel unit (rare; some browsers/page-scroll mice).
+const SCROLL_PAGE_NOTCHES: f32 = 4.0;
+
 /// Free-look camera for the 3D viewport.
 #[derive(Clone, Debug)]
 pub struct Camera {
@@ -166,25 +177,28 @@ impl Camera {
         }
 
         if response.hovered() {
-            let raw_scroll = ctx.input(|i| {
+            // Normalize each wheel event by its unit into "notches": winit
+            // reports lines (~1/notch), browsers report points (~100/notch).
+            // Summing raw events (not a per-frame delta) keeps the result
+            // frame-rate independent, and `powf` composes the same total
+            // factor however the scroll is split across frames.
+            let scroll_notches = ctx.input(|i| {
                 i.raw
                     .events
                     .iter()
                     .filter_map(|e| match e {
-                        egui::Event::MouseWheel { delta, .. } => Some(delta.y),
+                        egui::Event::MouseWheel { unit, delta, .. } => Some(match unit {
+                            egui::MouseWheelUnit::Line => delta.y,
+                            egui::MouseWheelUnit::Point => delta.y / SCROLL_POINTS_PER_NOTCH,
+                            egui::MouseWheelUnit::Page => delta.y * SCROLL_PAGE_NOTCHES,
+                        }),
                         _ => None,
                     })
                     .sum::<f32>()
             });
             let shift_held = ctx.input(|i| i.modifiers.shift);
-            if (rmb_held || shift_held) && raw_scroll != 0.0 {
-                // Exponential per-unit scaling. ln(1.2)/50 gives ~1.2x
-                // per canonical wheel notch (~50 units), and because
-                // exp(a)*exp(b) = exp(a+b), spreading the same total
-                // scroll across more frames at high fps multiplies to
-                // the same final factor. A bare sign-based factor
-                // compounded once per frame, which ran away at 400 fps.
-                let factor = (raw_scroll * (1.2_f32.ln() / 50.0)).exp();
+            if (rmb_held || shift_held) && scroll_notches != 0.0 {
+                let factor = SPEED_STEP_PER_NOTCH.powf(scroll_notches);
                 self.move_speed = (self.move_speed * factor).clamp(MIN_MOVE_SPEED, MAX_MOVE_SPEED);
             }
         }

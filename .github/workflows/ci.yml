@@ -64,7 +64,7 @@ jobs:
         echo "----- end preview -----"
 
         if ! gh release view "$TAG" >/dev/null 2>&1; then
-          gh release create "$TAG" --notes-file "$NOTES" --title "$TAG"
+          gh release create "$TAG" --draft --notes-file "$NOTES" --title "$TAG"
         fi
 
   build:

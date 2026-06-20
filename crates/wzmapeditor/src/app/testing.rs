@@ -32,21 +32,34 @@ pub(super) fn is_campaign_map(app: &EditorApp) -> bool {
 /// A missing executable is intentionally not a disabling condition: the
 /// click handler routes the user to Settings → Game so they can set one.
 pub(super) fn can_test_map(app: &EditorApp) -> bool {
-    app.document.is_some() && app.test_process.is_none() && !is_campaign_map(app)
+    // The web build cannot spawn the game process, so test-launching is never
+    // available there.
+    !cfg!(target_arch = "wasm32")
+        && app.document.is_some()
+        && app.test_process.is_none()
+        && !is_campaign_map(app)
 }
 
 /// Tooltip explaining the test map button's current state.
 pub(super) fn test_map_tooltip(app: &EditorApp) -> &'static str {
-    if app.test_process.is_some() {
-        "Test game is already running"
-    } else if app.document.is_none() {
-        "Load a map first"
-    } else if is_campaign_map(app) {
-        "Campaign maps cannot be test-launched (skirmish only)"
-    } else if resolve_wz_executable(app).is_none() {
-        "Choose a Warzone 2100 executable in Settings \u{2192} Game (F5)"
-    } else {
-        "Launch map in WZ2100 (F5)"
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = app;
+        "Test-launching is not available in the web build"
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        if app.test_process.is_some() {
+            "Test game is already running"
+        } else if app.document.is_none() {
+            "Load a map first"
+        } else if is_campaign_map(app) {
+            "Campaign maps cannot be test-launched (skirmish only)"
+        } else if resolve_wz_executable(app).is_none() {
+            "Choose a Warzone 2100 executable in Settings \u{2192} Game (F5)"
+        } else {
+            "Launch map in WZ2100 (F5)"
+        }
     }
 }
 

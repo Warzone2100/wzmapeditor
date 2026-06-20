@@ -232,6 +232,9 @@ pub struct EditorApp {
     /// `update()` call count, used to detect the first surviving frame
     /// so the launch sentinel can be cleared.
     pub update_count: u32,
+    /// Last title pushed to the OS window / browser tab; lets the per-frame
+    /// refresh skip the platform call unless the title actually changed.
+    pub window_title: Option<String>,
     /// Whether HQ terrain textures (`high.wz` `hw-256` decals) are present
     /// on disk. Drives the "Remastered (HQ)" radio's enabled state.
     pub has_hq_textures: bool,
@@ -515,6 +518,7 @@ impl EditorApp {
             window_focused: true,
             last_paint_at: None,
             update_count: 0,
+            window_title: None,
             has_hq_textures,
             update_check_rx,
             update_available: None,
@@ -585,6 +589,43 @@ impl EditorApp {
     /// toggle is off, so the user can see what they are editing.
     pub fn labels_visible(&self) -> bool {
         self.show_labels || self.tool_state.active_tool == crate::tools::ToolId::ScriptLabel
+    }
+
+    /// Display name of the loaded map for the window title, falling back to
+    /// the save-path file stem when the map carries no internal name.
+    fn loaded_map_name(&self) -> Option<String> {
+        let doc = self.document.as_ref()?;
+        let name = doc.map.map_name.trim();
+        if !name.is_empty() {
+            return Some(name.to_owned());
+        }
+        self.save_path
+            .as_ref()
+            .and_then(|p| p.file_stem())
+            .map(|s| s.to_string_lossy().into_owned())
+    }
+
+    /// Refresh the OS window (native) or browser-tab (web) title to reflect
+    /// the loaded map, e.g. `wzmapeditor - 0.8.1 - 3c-Gamma`.
+    fn update_window_title(&mut self, ctx: &egui::Context) {
+        const BASE: &str = concat!("wzmapeditor - ", env!("CARGO_PKG_VERSION"));
+        let title = match self.loaded_map_name() {
+            Some(name) => format!("{BASE} - {name}"),
+            None => BASE.to_owned(),
+        };
+        if self.window_title.as_deref() == Some(title.as_str()) {
+            return;
+        }
+        self.window_title = Some(title.clone());
+        #[cfg(not(target_arch = "wasm32"))]
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = ctx;
+            if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+                doc.set_title(&title);
+            }
+        }
     }
 
     /// Emit an Info entry to the Output panel and the disk log.
@@ -844,6 +885,7 @@ impl eframe::App for EditorApp {
         }
         self.poll_update_check();
         self.record_frame_time(ctx);
+        self.update_window_title(ctx);
         // Snapshot OS-level window focus so animation-driven repaint
         // schedulers can skip when we're in the background. egui already
         // wakes update() on focus changes and on background-thread

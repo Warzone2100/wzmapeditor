@@ -645,7 +645,7 @@ fn place_object_command(
                 modules: 0,
                 id: None,
             };
-            super::placement::build_placement_with_wall_replace(ctx.map, stats, structure)
+            super::placement::build_structure_placement(ctx.map, stats, structure)
         } else if is_feature {
             let feature = wz_maplib::objects::Feature {
                 name: obj_name.to_owned(),

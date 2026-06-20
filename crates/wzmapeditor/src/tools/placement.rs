@@ -5,11 +5,19 @@
 //! going through the viewport module.
 
 use crate::map::history::{CompoundCommand, EditCommand};
-use crate::tools::object_edit::{DeleteObjectCommand, PlaceStructureCommand};
+use crate::tools::object_edit::{DeleteObjectCommand, PlaceFeatureCommand, PlaceStructureCommand};
 
 use wz_maplib::constants::{MAX_INCLINE, TILE_MASK, TILE_UNITS as TILE_UNITS_U32, TOO_NEAR_EDGE};
-use wz_maplib::objects::Structure;
+use wz_maplib::objects::{Feature, Structure};
 use wz_maplib::validate::{is_wall_or_defense, structure_packability};
+
+/// WZ2100 stat `type` of an oil derrick; valid only on an oil-resource tile.
+const RESOURCE_EXTRACTOR_TYPE: &str = "RESOURCE EXTRACTOR";
+/// WZ2100 stat `type` of the oil-resource feature a derrick is built on.
+const OIL_RESOURCE_TYPE: &str = "OIL RESOURCE";
+/// Canonical stat id for the oil-resource feature, respawned when a derrick
+/// is deleted (the game reveals the oil again on derrick destruction).
+const OIL_RESOURCE_NAME: &str = "OilResource";
 
 /// Existing-tile structure types that a wall-combining tower can land on
 /// and replace. Restricted to the types `build_placement_with_wall_replace`
@@ -184,6 +192,15 @@ pub fn validate_placement(
         return false;
     }
 
+    // A resource extractor is valid only on a tile holding an oil-resource
+    // feature, and skips the terrain/slope/spacing/overlap checks that apply
+    // to other buildings (WZ2100 structure.cpp `validLocation`, dedicated
+    // `REF_RESOURCE_EXTRACTOR` case). Ignores `force`: there is no override
+    // for placing a derrick off oil.
+    if stype == Some(RESOURCE_EXTRACTOR_TYPE) {
+        return oil_resource_index_at(map, stats, center_tx, center_tz).is_some();
+    }
+
     let ttp = map.terrain_types.as_ref();
 
     let terrain_type_at = |tx: u32, tz: u32| -> Option<wz_maplib::TerrainType> {
@@ -262,6 +279,80 @@ pub fn validate_placement(
     }
 
     true
+}
+
+fn is_resource_extractor(stats: Option<&wz_stats::StatsDatabase>, name: &str) -> bool {
+    stats
+        .and_then(|s| s.structures.get(name))
+        .and_then(|st| st.structure_type.as_deref())
+        == Some(RESOURCE_EXTRACTOR_TYPE)
+}
+
+fn is_oil_resource(stats: Option<&wz_stats::StatsDatabase>, name: &str) -> bool {
+    stats
+        .and_then(|s| s.features.get(name))
+        .and_then(|f| f.feature_type.as_deref())
+        == Some(OIL_RESOURCE_TYPE)
+}
+
+/// Index of an oil-resource feature occupying tile `(tx, tz)`, if any.
+fn oil_resource_index_at(
+    map: &wz_maplib::WzMap,
+    stats: Option<&wz_stats::StatsDatabase>,
+    tx: u32,
+    tz: u32,
+) -> Option<usize> {
+    map.features.iter().position(|f| {
+        (f.position.x >> 7) == tx && (f.position.y >> 7) == tz && is_oil_resource(stats, &f.name)
+    })
+}
+
+/// Build the placement command for a structure, applying WZ2100's special
+/// cases: a resource extractor consumes the oil-resource feature it lands on,
+/// and a wall-combining tower replaces a wall underneath it.
+pub(crate) fn build_structure_placement(
+    map: &wz_maplib::WzMap,
+    stats: Option<&wz_stats::StatsDatabase>,
+    structure: Structure,
+) -> Box<dyn EditCommand> {
+    if is_resource_extractor(stats, &structure.name) {
+        let tx = structure.position.x >> 7;
+        let tz = structure.position.y >> 7;
+        if let Some(idx) = oil_resource_index_at(map, stats, tx, tz) {
+            let saved = map.features[idx].clone();
+            return Box::new(CompoundCommand::new(vec![
+                Box::new(DeleteObjectCommand::feature(idx, saved)),
+                Box::new(PlaceStructureCommand { structure }),
+            ]));
+        }
+        return Box::new(PlaceStructureCommand { structure });
+    }
+    build_placement_with_wall_replace(map, stats, structure)
+}
+
+/// Build the deletion command for a structure at `index`, respawning the
+/// oil-resource feature when the structure is a resource extractor. Mirrors
+/// the game, where destroying a derrick reveals the oil it was built on.
+pub(crate) fn build_structure_deletion(
+    structure: &Structure,
+    index: usize,
+    stats: Option<&wz_stats::StatsDatabase>,
+) -> Box<dyn EditCommand> {
+    let delete = DeleteObjectCommand::structure(index, structure.clone());
+    if !is_resource_extractor(stats, &structure.name) {
+        return Box::new(delete);
+    }
+    let oil = Feature {
+        name: OIL_RESOURCE_NAME.to_string(),
+        position: structure.position,
+        direction: 0,
+        id: None,
+        player: None,
+    };
+    Box::new(CompoundCommand::new(vec![
+        Box::new(delete),
+        Box::new(PlaceFeatureCommand { feature: oil }),
+    ]))
 }
 
 /// Build a placement command that also removes any plain wall underneath
@@ -408,8 +499,10 @@ fn build_occupancy_set(
 mod tests {
     use super::*;
     use wz_maplib::constants::TILE_UNITS;
+    use wz_maplib::objects::WorldPos;
     use wz_stats::StatsDatabase;
     use wz_stats::features::FeatureStats;
+    use wz_stats::structures::StructureStats;
 
     fn stats_with_oil_resource() -> StatsDatabase {
         let mut db = StatsDatabase::default();
@@ -449,5 +542,137 @@ mod tests {
                 );
             }
         }
+    }
+
+    fn stats_with_oil_and_extractor() -> StatsDatabase {
+        let mut db = stats_with_oil_resource();
+        db.structures.insert(
+            "A0ResourceExtractor".to_string(),
+            StructureStats {
+                id: "A0ResourceExtractor".to_string(),
+                name: "Oil Derrick".to_string(),
+                structure_type: Some(RESOURCE_EXTRACTOR_TYPE.to_string()),
+                width: Some(1),
+                breadth: Some(1),
+                ..Default::default()
+            },
+        );
+        db
+    }
+
+    fn tile_center(tx: u32, tz: u32) -> WorldPos {
+        let half = TILE_UNITS / 2;
+        WorldPos {
+            x: tx * TILE_UNITS + half,
+            y: tz * TILE_UNITS + half,
+        }
+    }
+
+    fn oil_resource(pos: WorldPos) -> Feature {
+        Feature {
+            name: OIL_RESOURCE_NAME.to_string(),
+            position: pos,
+            direction: 0,
+            id: None,
+            player: None,
+        }
+    }
+
+    fn derrick(pos: WorldPos) -> Structure {
+        Structure {
+            name: "A0ResourceExtractor".to_string(),
+            position: pos,
+            direction: 0,
+            player: 0,
+            modules: 0,
+            id: None,
+        }
+    }
+
+    #[test]
+    fn resource_extractor_valid_only_on_oil_resource() {
+        let stats = stats_with_oil_and_extractor();
+        let mut map = wz_maplib::WzMap::new("Test", 32, 32);
+        let oil_pos = tile_center(8, 8);
+        map.features.push(oil_resource(oil_pos));
+
+        let valid = |pos: WorldPos, force: bool| {
+            validate_placement(
+                &map,
+                Some(&stats),
+                Some("A0ResourceExtractor"),
+                0,
+                pos.x,
+                pos.y,
+                force,
+            )
+        };
+
+        assert!(valid(oil_pos, false), "valid on the oil-resource tile");
+        let empty = tile_center(12, 12);
+        assert!(!valid(empty, false), "invalid off an oil resource");
+        assert!(
+            !valid(empty, true),
+            "force does not override the oil requirement"
+        );
+    }
+
+    #[test]
+    fn placing_extractor_consumes_oil_resource() {
+        let stats = stats_with_oil_and_extractor();
+        let mut map = wz_maplib::WzMap::new("Test", 32, 32);
+        let pos = tile_center(8, 8);
+        map.features.push(oil_resource(pos));
+
+        let cmd = build_structure_placement(&map, Some(&stats), derrick(pos));
+        cmd.execute(&mut map);
+        assert_eq!(map.structures.len(), 1);
+        assert!(
+            map.features.is_empty(),
+            "oil resource consumed by the derrick"
+        );
+
+        cmd.undo(&mut map);
+        assert!(map.structures.is_empty());
+        assert_eq!(map.features.len(), 1, "undo restores the oil resource");
+        assert_eq!(map.features[0].name, OIL_RESOURCE_NAME);
+    }
+
+    #[test]
+    fn deleting_extractor_respawns_oil_resource() {
+        let stats = stats_with_oil_and_extractor();
+        let mut map = wz_maplib::WzMap::new("Test", 32, 32);
+        let pos = tile_center(8, 8);
+        map.structures.push(derrick(pos));
+
+        let cmd = build_structure_deletion(&map.structures[0].clone(), 0, Some(&stats));
+        cmd.execute(&mut map);
+        assert!(map.structures.is_empty());
+        assert_eq!(map.features.len(), 1, "deleting a derrick reveals the oil");
+        assert_eq!(map.features[0].name, OIL_RESOURCE_NAME);
+        assert_eq!(map.features[0].position.x, pos.x);
+        assert_eq!(map.features[0].position.y, pos.y);
+
+        cmd.undo(&mut map);
+        assert_eq!(map.structures.len(), 1, "undo restores the derrick");
+        assert!(map.features.is_empty());
+    }
+
+    #[test]
+    fn deleting_non_extractor_does_not_spawn_a_feature() {
+        let stats = stats_with_oil_and_extractor();
+        let mut map = wz_maplib::WzMap::new("Test", 32, 32);
+        let pos = tile_center(8, 8);
+        let mut other = derrick(pos);
+        other.name = "A0CommandCentre".to_string();
+        map.structures.push(other.clone());
+
+        let cmd = build_structure_deletion(&other, 0, Some(&stats));
+        cmd.execute(&mut map);
+        assert!(map.structures.is_empty());
+        assert!(
+            map.features.is_empty(),
+            "non-derrick deletion spawns nothing"
+        );
     }
 }

@@ -13,8 +13,8 @@ pub(super) fn draw_info_bar(ui: &mut Ui, app: &mut EditorApp, rect: Rect) {
     let painter = ui.painter_at(rect);
 
     let mut info = format!(
-        "Map: {}x{} | {:?}",
-        map.width, map.height, app.tool_state.active_tool
+        "Map: {}x{} | {} | {:?}",
+        map.width, map.height, app.current_tileset, app.tool_state.active_tool
     );
     if let Some((tx, ty)) = app.hovered_tile {
         write!(info, " | Tile: ({tx}, {ty})").unwrap();

@@ -318,8 +318,16 @@ impl Tool for ObjectPlaceTool {
         self
     }
 
-    fn on_deactivated(&mut self, _ctx: &mut ToolCtx<'_>) -> Option<Box<dyn EditCommand>> {
-        self.clear_preview();
+    fn on_deactivated(&mut self, ctx: &mut ToolCtx<'_>) -> Option<Box<dyn EditCommand>> {
+        // Leaving the tool resets the selected asset: clears the hover ghost
+        // and the Asset Browser highlight (which reads `placement_object`).
+        // Guarded so the per-frame deactivation of inactive tools doesn't keep
+        // re-flagging the object buffer for rebuild.
+        if self.placement_object.is_some() || self.preview_pos.is_some() {
+            self.clear_preview();
+            self.placement_object = None;
+            ctx.dirty.objects = true;
+        }
         None
     }
 
@@ -679,6 +687,7 @@ fn place_object_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tools::MirrorMode;
 
     #[test]
     fn select_tool_defaults() {
@@ -716,10 +725,49 @@ mod tests {
         tool.clear_preview();
         assert!(tool.preview_pos.is_none());
         assert!(!tool.preview_valid);
-        // Asset selection must survive the preview reset; switching tools
-        // shouldn't lose the user's chosen asset.
+        // The asset survives a bare preview reset: `clear_preview` also runs
+        // when the cursor leaves the canvas, which must not drop the asset.
+        // Switching tools clears it instead, via `on_deactivated`.
         assert_eq!(tool.placement_object.as_deref(), Some("Tower"));
         assert_eq!(tool.placement_player, 3);
+    }
+
+    #[test]
+    fn place_tool_deactivation_resets_asset_and_ghost() {
+        let mut tool = ObjectPlaceTool {
+            placement_object: Some("Tower".into()),
+            placement_player: 3,
+            placement_direction: 0,
+            preview_pos: Some((10, 20)),
+            preview_valid: true,
+        };
+        let mut map = wz_maplib::WzMap::new("test", 4, 4);
+        let mut history = crate::map::history::EditHistory::new();
+        let mut dirty = crate::tools::trait_def::DirtyFlags::default();
+        let mut dirty_tiles = rustc_hash::FxHashSet::default();
+        let mut stroke_active = false;
+        let mut hovered_tile: Option<(u32, u32)> = None;
+        let mut log_sink = |_msg: String| {};
+        let mut ctx = ToolCtx {
+            map: &mut map,
+            history: &mut history,
+            dirty: &mut dirty,
+            stats: None,
+            placement_player: 0,
+            mirror_mode: MirrorMode::None,
+            terrain_dirty_tiles: &mut dirty_tiles,
+            stroke_active: &mut stroke_active,
+            tile_pools: &[],
+            log_sink: &mut log_sink,
+            hovered_tile: &mut hovered_tile,
+        };
+        assert!(tool.on_deactivated(&mut ctx).is_none());
+        assert!(tool.placement_object.is_none(), "asset selection reset");
+        assert!(tool.preview_pos.is_none(), "hover ghost reset");
+        assert!(
+            dirty.objects,
+            "object buffer flagged so the ghost is dropped"
+        );
     }
 
     #[test]

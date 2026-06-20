@@ -80,7 +80,15 @@ pub fn show_asset_browser_inner(
         let search_resp = ui.add(
             egui::TextEdit::singleline(&mut tool_state.asset_search)
                 .hint_text("Search")
-                .desired_width(90.0),
+                .desired_width(90.0)
+                // Reserve room on the right so typed text never slides under
+                // the clear glyph.
+                .margin(egui::Margin {
+                    left: 4,
+                    right: 18,
+                    top: 2,
+                    bottom: 2,
+                }),
         );
         // A search spans every category, so it overrides the category
         // selection: remember the picked category on the first keystroke and
@@ -92,6 +100,34 @@ pub fn show_asset_browser_inner(
                 }
             } else if tool_state.asset_search_prev_category.is_none() {
                 tool_state.asset_search_prev_category = Some(tool_state.asset_category);
+            }
+        }
+        // Clear (✕) glyph painted inside the right edge of the field; clicking
+        // it empties the search and restores the category the search overrode.
+        if !tool_state.asset_search.is_empty() {
+            let center = egui::pos2(search_resp.rect.right() - 9.0, search_resp.rect.center().y);
+            let hit = egui::Rect::from_center_size(center, egui::Vec2::splat(16.0));
+            let clear = ui.interact(hit, ui.id().with("asset_search_clear"), egui::Sense::click());
+            let color = if clear.hovered() {
+                ui.visuals().strong_text_color()
+            } else {
+                ui.visuals().weak_text_color()
+            };
+            ui.painter().text(
+                center,
+                egui::Align2::CENTER_CENTER,
+                "\u{2715}",
+                egui::FontId::proportional(12.0),
+                color,
+            );
+            if clear.hovered() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+            if clear.clicked() {
+                tool_state.asset_search.clear();
+                if let Some(prev) = tool_state.asset_search_prev_category.take() {
+                    tool_state.asset_category = prev;
+                }
             }
         }
         crate::ui::property_panel::player_widget(

@@ -187,6 +187,19 @@ jobs:
         curl -fsSL https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz \
           | tar -xzf - -C "$HOME/.cargo/bin"
         trunk --version
+    - name: Set up Python
+      if: steps.detect.outputs.present == 'true'
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install data-slimming dependencies
+      if: steps.detect.outputs.present == 'true'
+      run: pip install -r scripts/requirements.txt
+    - name: Fetch and slim WZ2100 web data
+      if: steps.detect.outputs.present == 'true'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: ./scripts/fetch-web-data.sh
     # Run from the crate dir so trunk resolves the package from the local
     # Cargo.toml/Trunk.toml, not the workspace's virtual root manifest. Root
     # relative (`/`) so the same bundle serves any domain root.

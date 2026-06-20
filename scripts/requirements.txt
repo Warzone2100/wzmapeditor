@@ -1,0 +1,3 @@
+# Dependencies for slim-data.py (run by scripts/fetch-web-data.sh, including CI).
+Pillow==12.2.0
+pyoxipng==9.1.1

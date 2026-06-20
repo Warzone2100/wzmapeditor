@@ -16,12 +16,13 @@ Usage:
 """
 
 import collections
+import io
 import os
 import sys
 import zipfile
-import io
-from PIL import Image # pip install Pillow
-import oxipng # pip install pyoxipng
+
+import oxipng
+from PIL import Image
 
 # Whole top-level directories the editor never reads.
 DROP_DIRS = {
@@ -52,50 +53,18 @@ def should_drop(name: str) -> bool:
         return True
     return False
 
+
 def optimize_png_in_memory(input_bytes: bytes) -> bytes:
-    """Takes PNG file data as bytes, resizes it to fit a 512x512 box
-    (if larger), optimizes the PNG, and returns the new bytes
-    only if they are smaller than the original input bytes.
-    """
-    # 1. Load the input bytes into an in-memory stream
-    in_stream = io.BytesIO(input_bytes)
-
-    # 2. Open and resize the image
-    with Image.open(in_stream) as img:
-        width, height = img.size
-
-        # Create an in-memory stream for the output
+    """Shrink a PNG into a 512x512 box and re-optimize it, keeping the original
+    bytes when the result is not smaller."""
+    with Image.open(io.BytesIO(input_bytes)) as img:
+        img.thumbnail((512, 512), Image.Resampling.LANCZOS)
         out_stream = io.BytesIO()
+        img.save(out_stream, format="PNG")
 
-        if width <= 512 and height <= 512:
-            # Skip resizing: save a direct copy to the stream
-            img.save(out_stream, format="PNG")
-        else:
-            # Resize: shrink to fit 512x512 box
-            img.thumbnail((512, 512), Image.Resampling.LANCZOS)
-            img.save(out_stream, format="PNG")
+    optimized = oxipng.optimize_from_memory(out_stream.getvalue(), level=6)
+    return optimized if len(optimized) < len(input_bytes) else input_bytes
 
-    # Get the unoptimized resized data from the stream
-    resized_bytes = out_stream.getvalue()
-
-    try:
-        # 3. Optimize the raw bytes in-memory using oxipng
-        optimized_bytes = oxipng.optimize_from_memory(resized_bytes, level=6)
-
-        # 4. Compare sizes and return the smallest version
-        if len(optimized_bytes) < len(input_bytes):
-            return optimized_bytes
-
-        print(
-            f"  Warning: Optimized data ({len(optimized_bytes)} bytes) is not "
-            f"  smaller than original ({len(input_bytes)} bytes). Keeping original."
-        )
-        return input_bytes
-
-    except Exception as e:
-        # If optimization fails, fallback safely to the input bytes
-        print(f"Error during optimization: {e}. Keeping original.")
-        return input_bytes
 
 def main() -> int:
     if len(sys.argv) != 3:
@@ -120,7 +89,6 @@ def main() -> int:
                 continue
             data = zin.read(info.filename)
             orig_data_len = len(data)
-            # Optimize PNGs
             if os.path.splitext(info.filename)[1].lower() == '.png':
                 data = optimize_png_in_memory(data)
             # Preserve the original compression method (base.wz is STORED, which

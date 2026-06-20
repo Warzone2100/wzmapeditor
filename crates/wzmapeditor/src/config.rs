@@ -651,19 +651,33 @@ pub fn wz2100_config_dir() -> Option<PathBuf> {
         for suffix in &suffixes {
             let versioned = base.join(format!("Warzone 2100-{suffix}"));
             if versioned.exists() {
-                log::info!("Detected WZ2100 config dir: {}", versioned.display());
+                log_detected_config_dir(&versioned);
                 return Some(versioned);
             }
         }
         let bare = base.join("Warzone 2100");
         if bare.exists() {
-            log::info!("Detected WZ2100 config dir: {}", bare.display());
+            log_detected_config_dir(&bare);
             return Some(bare);
         }
     }
 
     // Nothing found, fall back to the first base with a reasonable default.
     bases.first().map(|b| b.join("Warzone 2100-4.5"))
+}
+
+/// Log the detected WZ2100 config dir, suppressing repeats of the same path.
+///
+/// `wz2100_config_dir` is re-resolved every frame the Game settings tab is
+/// shown, so logging unconditionally floods the log.
+fn log_detected_config_dir(dir: &Path) {
+    static LAST_LOGGED: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+    if let Ok(mut last) = LAST_LOGGED.lock()
+        && last.as_deref() != Some(dir)
+    {
+        log::info!("Detected WZ2100 config dir: {}", dir.display());
+        *last = Some(dir.to_path_buf());
+    }
 }
 
 /// Candidate base directories for WZ2100 user profiles. Different WZ2100

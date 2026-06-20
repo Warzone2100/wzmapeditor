@@ -19,6 +19,9 @@ import collections
 import os
 import sys
 import zipfile
+import io
+from PIL import Image # pip install Pillow
+import oxipng # pip install pyoxipng
 
 # Whole top-level directories the editor never reads.
 DROP_DIRS = {
@@ -49,6 +52,50 @@ def should_drop(name: str) -> bool:
         return True
     return False
 
+def optimize_png_in_memory(input_bytes: bytes) -> bytes:
+    """Takes PNG file data as bytes, resizes it to fit a 512x512 box
+    (if larger), optimizes the PNG, and returns the new bytes
+    only if they are smaller than the original input bytes.
+    """
+    # 1. Load the input bytes into an in-memory stream
+    in_stream = io.BytesIO(input_bytes)
+
+    # 2. Open and resize the image
+    with Image.open(in_stream) as img:
+        width, height = img.size
+
+        # Create an in-memory stream for the output
+        out_stream = io.BytesIO()
+
+        if width <= 512 and height <= 512:
+            # Skip resizing: save a direct copy to the stream
+            img.save(out_stream, format="PNG")
+        else:
+            # Resize: shrink to fit 512x512 box
+            img.thumbnail((512, 512), Image.Resampling.LANCZOS)
+            img.save(out_stream, format="PNG")
+
+    # Get the unoptimized resized data from the stream
+    resized_bytes = out_stream.getvalue()
+
+    try:
+        # 3. Optimize the raw bytes in-memory using oxipng
+        optimized_bytes = oxipng.optimize_from_memory(resized_bytes, level=6)
+
+        # 4. Compare sizes and return the smallest version
+        if len(optimized_bytes) < len(input_bytes):
+            return optimized_bytes
+
+        print(
+            f"  Warning: Optimized data ({len(optimized_bytes)} bytes) is not "
+            f"  smaller than original ({len(input_bytes)} bytes). Keeping original."
+        )
+        return input_bytes
+
+    except Exception as e:
+        # If optimization fails, fallback safely to the input bytes
+        print(f"Error during optimization: {e}. Keeping original.")
+        return input_bytes
 
 def main() -> int:
     if len(sys.argv) != 3:
@@ -72,14 +119,22 @@ def main() -> int:
                 dropped_by_top[top][1] += info.file_size
                 continue
             data = zin.read(info.filename)
+            orig_data_len = len(data)
+            # Optimize PNGs
+            if os.path.splitext(info.filename)[1].lower() == '.png':
+                data = optimize_png_in_memory(data)
             # Preserve the original compression method (base.wz is STORED, which
             # the in-browser zip reader can slice without inflating).
             out = zipfile.ZipInfo(info.filename, date_time=info.date_time)
             out.compress_type = info.compress_type
             out.external_attr = info.external_attr
             zout.writestr(out, data)
+            written_data_len = len(data)
             kept_files += 1
-            kept_bytes += info.file_size
+            kept_bytes += written_data_len
+            print(f"  wrote: {info.filename} {written_data_len/1024:8.2f} KiB")
+            if written_data_len < orig_data_len:
+                print(f"   - (original size: {orig_data_len/1024:8.2f} KiB)")
 
     print(f"{os.path.basename(src)} -> {os.path.basename(dst)}")
     print(f"  kept:    {kept_files:5d} files  {kept_bytes/1e6:8.2f} MB")

@@ -189,7 +189,7 @@ jobs:
         trunk --version
     - name: Set up Python
       if: steps.detect.outputs.present == 'true'
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: '3.12'
     - name: Install data-slimming dependencies

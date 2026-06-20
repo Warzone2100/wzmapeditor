@@ -107,7 +107,11 @@ pub fn show_asset_browser_inner(
         if !tool_state.asset_search.is_empty() {
             let center = egui::pos2(search_resp.rect.right() - 9.0, search_resp.rect.center().y);
             let hit = egui::Rect::from_center_size(center, egui::Vec2::splat(16.0));
-            let clear = ui.interact(hit, ui.id().with("asset_search_clear"), egui::Sense::click());
+            let clear = ui.interact(
+                hit,
+                ui.id().with("asset_search_clear"),
+                egui::Sense::click(),
+            );
             let color = if clear.hovered() {
                 ui.visuals().strong_text_color()
             } else {

@@ -303,10 +303,14 @@ pub(crate) fn poll_last_map_restore(app: &mut EditorApp, ctx: &egui::Context) {
         return;
     }
     app.rt.web_last_map_restore_attempted = true;
-    if app.document.is_none()
-        && let Some((name, bytes)) = app.rt.web_last_map_pending.take()
-    {
-        crate::web_map_io::restore(app, &name, &bytes);
+    if app.document.is_none() {
+        if let Some((name, bytes)) = app.rt.web_last_map_pending.take() {
+            crate::web_map_io::restore(app, &name, &bytes);
+        } else {
+            // First visit (nothing cached): open the bundled default map so the
+            // editor starts on a real scene instead of an empty grid.
+            crate::web_map_io::load_default_map(app);
+        }
     }
 }
 

@@ -94,6 +94,24 @@ pub(crate) fn restore(app: &mut EditorApp, name_hint: &str, bytes: &[u8]) {
     }
 }
 
+/// The map opened on a first web visit, before the user opens their own.
+/// Packaged once from the stock 3c-Gamma directory map into a single `.wz`.
+const DEFAULT_MAP_NAME: &str = "3c-Gamma";
+const DEFAULT_MAP_WZ: &[u8] = include_bytes!("../assets/3c-Gamma.wz");
+
+/// Open the bundled default map so a fresh visit (nothing cached) starts on a
+/// real scene instead of an empty grid.
+pub(crate) fn load_default_map(app: &mut EditorApp) {
+    match wz_maplib::io_wz::load_from_wz_reader(Cursor::new(DEFAULT_MAP_WZ), DEFAULT_MAP_NAME) {
+        Ok(map) => {
+            let save = std::path::PathBuf::from(format!("{DEFAULT_MAP_NAME}.wz"));
+            app.load_map(map, None, Some(save), None);
+            app.log(format!("Loaded default map: {DEFAULT_MAP_NAME}"));
+        }
+        Err(e) => log::warn!("Failed to load bundled default map: {e}"),
+    }
+}
+
 /// Read the picked file's bytes and derive its name stem.
 async fn read_picked(file: web_sys::File) -> Result<PickedMap, String> {
     let name = file.name();

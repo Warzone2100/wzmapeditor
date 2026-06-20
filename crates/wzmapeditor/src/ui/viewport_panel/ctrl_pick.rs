@@ -172,8 +172,8 @@ fn pick_object_for_placement(
             app.model_loader.as_ref(),
             app.stats.as_ref(),
             picking::PickVisibility {
-                labels: app.show_labels,
-                gateways: app.show_gateways,
+                labels: app.labels_visible(),
+                gateways: app.gateways_visible(),
             },
         )
     };

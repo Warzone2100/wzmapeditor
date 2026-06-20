@@ -571,6 +571,22 @@ impl EditorApp {
         Some((avg, min, max))
     }
 
+    /// Whether gateways should be drawn and hit-tested.
+    ///
+    /// Activating the Gateway tool reveals them even when the view toggle
+    /// is off, so the user can see what they are editing.
+    pub fn gateways_visible(&self) -> bool {
+        self.show_gateways || self.tool_state.active_tool == crate::tools::ToolId::Gateway
+    }
+
+    /// Whether script labels should be drawn and hit-tested.
+    ///
+    /// Activating the Script Label tool reveals them even when the view
+    /// toggle is off, so the user can see what they are editing.
+    pub fn labels_visible(&self) -> bool {
+        self.show_labels || self.tool_state.active_tool == crate::tools::ToolId::ScriptLabel
+    }
+
     /// Emit an Info entry to the Output panel and the disk log.
     pub fn log(&mut self, msg: impl Into<String>) {
         let msg = msg.into();

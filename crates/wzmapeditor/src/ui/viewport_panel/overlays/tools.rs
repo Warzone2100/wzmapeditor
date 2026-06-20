@@ -21,7 +21,7 @@ const GATEWAY_MIN_CLIP_W: f32 = 1.0;
 const GATEWAY_MAX_NDC: f32 = 4.0;
 
 pub(super) fn draw_gateways(ui: &mut Ui, app: &mut EditorApp, camera: Option<&Camera>, rect: Rect) {
-    if !app.show_gateways {
+    if !app.gateways_visible() {
         return;
     }
     let Some(camera) = camera else {

@@ -8,7 +8,7 @@ use crate::viewport::picking;
 use super::project_world_to_screen;
 
 pub(super) fn draw(ui: &mut Ui, app: &mut EditorApp, camera: Option<&Camera>, rect: Rect) {
-    if !app.show_labels {
+    if !app.labels_visible() {
         return;
     }
     let Some(camera) = camera else {

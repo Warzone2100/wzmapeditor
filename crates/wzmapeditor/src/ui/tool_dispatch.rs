@@ -120,8 +120,8 @@ fn dispatch_pointer_input(
         .map(|res| PickerCtx {
             renderer: &res.renderer,
             model_loader: model_loader.as_ref(),
-            show_labels,
-            show_gateways,
+            show_labels: show_labels || active == ToolId::ScriptLabel,
+            show_gateways: show_gateways || active == ToolId::Gateway,
         });
 
     let stats_ref: Option<&wz_stats::StatsDatabase> = stats.as_ref();

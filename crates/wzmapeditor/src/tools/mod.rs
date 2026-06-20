@@ -105,6 +105,9 @@ pub struct ToolState {
     /// True = grid view, false = list view.
     pub asset_grid_view: bool,
     pub asset_category: AssetCategory,
+    /// Category to restore when an active asset search is cleared. `Some`
+    /// only while a search overrides the category selection to show all.
+    pub asset_search_prev_category: Option<AssetCategory>,
     /// Off by default: campaign-only entries silently fail to spawn in skirmish/multiplayer maps.
     pub asset_show_campaign_only: bool,
     /// Pre-computed tile pools per ground type, rebuilt on tileset load.
@@ -162,6 +165,7 @@ impl Default for ToolState {
             asset_thumb_size: 64.0,
             asset_grid_view: true,
             asset_category: AssetCategory::Structures,
+            asset_search_prev_category: None,
             asset_show_campaign_only: false,
             tile_pools: Vec::new(),
             ground_type_mode: false,

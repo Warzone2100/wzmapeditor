@@ -33,7 +33,6 @@ pub(super) fn delete_selected_objects(app: &mut EditorApp) {
     let selected = app.selection.objects.clone();
     app.selection.clear();
 
-    let stats = app.stats.as_ref();
     let Some(doc) = app.document.as_mut() else {
         return;
     };
@@ -89,8 +88,8 @@ pub(super) fn delete_selected_objects(app: &mut EditorApp) {
     for i in struct_indices {
         if i < doc.map.structures.len() {
             let obj = doc.map.structures[i].clone();
-            commands.push(crate::tools::placement::build_structure_deletion(
-                &obj, i, stats,
+            commands.push(Box::new(
+                crate::tools::object_edit::DeleteObjectCommand::structure(i, obj),
             ));
         }
     }

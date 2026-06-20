@@ -6,8 +6,6 @@
 use eframe::egui_wgpu;
 use egui::{Ui, Vec2};
 
-use wz_maplib::constants::{MAX_PLAYERS, PLAYER_SCAVENGERS};
-
 use crate::thumbnails::ThumbnailCache;
 use crate::tools::{AssetCategory, ToolId, ToolState};
 use crate::viewport::model_loader::ModelLoader;
@@ -81,10 +79,10 @@ pub fn show_asset_browser_inner(
                 .hint_text("Search")
                 .desired_width(90.0),
         );
-        ui.add(
-            egui::DragValue::new(&mut tool_state.placement_player)
-                .prefix("P")
-                .range(PLAYER_SCAVENGERS..=MAX_PLAYERS as i8),
+        crate::ui::property_panel::player_widget(
+            ui,
+            &mut tool_state.placement_player,
+            "asset_placement_player",
         );
 
         ui.separator();

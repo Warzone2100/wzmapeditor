@@ -68,6 +68,14 @@ pub fn show_settings_window(ctx: &egui::Context, app: &mut EditorApp) {
                     ui.set_max_width(120.0);
                     for page in SettingsPage::ALL {
                         let selected = app.settings_page == page;
+                        // The Game page configures native-only test launching and
+                        // data paths; disable it in the web build.
+                        #[cfg(target_arch = "wasm32")]
+                        if matches!(page, SettingsPage::Game | SettingsPage::AutoSave) {
+                            ui.add_enabled(false, egui::Button::selectable(selected, page.label()))
+                                .on_disabled_hover_text("Not available in the web build");
+                            continue;
+                        }
                         if ui.selectable_label(selected, page.label()).clicked() {
                             app.settings_page = page;
                         }
@@ -210,12 +218,16 @@ fn show_rendering_settings(ui: &mut Ui, app: &mut EditorApp) {
     ui.separator();
     let mut vsync_on = app.config.present_mode.is_vsynced();
     if ui
-        .checkbox(&mut vsync_on, "Vsync")
+        .add_enabled(
+            !cfg!(target_arch = "wasm32"),
+            egui::Checkbox::new(&mut vsync_on, "Vsync"),
+        )
         .on_hover_text(
             "Off: lowest input latency, may tear. \
              On: cap frame rate to monitor refresh (AutoVsync / Fifo). \
              Takes effect after restart.",
         )
+        .on_disabled_hover_text("Not available in the web build")
         .changed()
     {
         app.config.present_mode = if vsync_on {
@@ -244,18 +256,25 @@ fn show_rendering_settings(ui: &mut Ui, app: &mut EditorApp) {
     let mut limit_on = app.config.fps_limit.is_some();
     let mut fps_value = app.config.fps_limit.unwrap_or(60);
     let mut changed = ui
-        .checkbox(&mut limit_on, "Limit FPS")
+        .add_enabled(
+            !cfg!(target_arch = "wasm32"),
+            egui::Checkbox::new(&mut limit_on, "Limit FPS"),
+        )
         .on_hover_text(
             "Cap the editor's frame rate independently of vsync. Sleeps \
              at the end of each frame instead of blocking the swapchain, \
              so input is sampled fresh each capped frame.",
         )
+        .on_disabled_hover_text("Not available in the web build")
         .changed();
     if limit_on {
         let slider = egui::Slider::new(&mut fps_value, 15..=240)
             .suffix(" fps")
             .clamping(egui::SliderClamping::Always);
-        if ui.add(slider).changed() {
+        if ui
+            .add_enabled(!cfg!(target_arch = "wasm32"), slider)
+            .changed()
+        {
             changed = true;
         }
     }

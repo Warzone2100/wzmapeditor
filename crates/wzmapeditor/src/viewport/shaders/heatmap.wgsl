@@ -62,6 +62,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let terrain_type = terrain_type_lut[tile_idx / 4u][tile_idx % 4u];
     let speed = get_speed(terrain_type);
 
+    // Impassable terrain (cliff faces for all ground units; water for non-hover)
+    // is uploaded as speed 0. Show it as a distinct dark "blocked" tile rather
+    // than the slow-end red, which would read as merely slow.
+    if speed <= 0.0 {
+        return vec4<f32>(0.06, 0.06, 0.08, 0.6);
+    }
+
     // 50% maps to t=0 (red), 100% to t=0.5 (yellow), 150% to t=1 (green).
     let t = clamp((speed - 0.5) / 1.0, 0.0, 1.0);
 

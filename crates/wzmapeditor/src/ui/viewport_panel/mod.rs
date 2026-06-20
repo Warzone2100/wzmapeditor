@@ -204,7 +204,18 @@ pub fn show_viewport(ui: &mut Ui, app: &mut EditorApp) {
                             {
                                 lut[i] = *terrain_type as u32;
                             }
-                            let speeds = tt.speed_column(app.heatmap_propulsion);
+                            let mut speeds = tt.speed_column(app.heatmap_propulsion);
+                            // Match WZ2100 fpathBlockingTile: cliff faces block
+                            // every ground propulsion (FEATURE_BLOCKED) and water
+                            // blocks all but hover (WATER_BLOCKED). The terrain
+                            // table still lists a nonzero speed for both, so mark
+                            // them impassable (0) for the heatmap.
+                            speeds[wz_maplib::TerrainType::Cliffface as usize] = 0.0;
+                            if app.heatmap_propulsion
+                                != wz_stats::terrain_table::PropulsionClass::Hover
+                            {
+                                speeds[wz_maplib::TerrainType::Water as usize] = 0.0;
+                            }
                             resources
                                 .renderer
                                 .upload_heatmap_data(device, queue, &lut, &speeds);

@@ -59,9 +59,13 @@ pub fn show_toolbar(ui: &mut Ui, app: &mut EditorApp) {
 
         ui.separator();
 
+        // The map browser only reaches local-filesystem and online sources,
+        // neither wired for the browser build yet; disable it on web.
+        let browser_enabled = !cfg!(target_arch = "wasm32");
         if ui
-            .button("Map Browser")
+            .add_enabled(browser_enabled, egui::Button::new("Map Browser"))
             .on_hover_text("Open the map browser")
+            .on_disabled_hover_text("Not available in the web build yet")
             .clicked()
         {
             actions::browse_maps(app, ui.ctx());

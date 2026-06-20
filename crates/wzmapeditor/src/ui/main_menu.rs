@@ -16,7 +16,14 @@ pub fn show_menu_bar(ui: &mut Ui, app: &mut EditorApp) {
                 actions::open_wz_dialog(app, ui.ctx());
                 ui.close();
             }
-            if ui.button("Browse Maps...").clicked() {
+            if ui
+                .add_enabled(
+                    !cfg!(target_arch = "wasm32"),
+                    egui::Button::new("Browse Maps..."),
+                )
+                .on_disabled_hover_text("Not available in the web build yet")
+                .clicked()
+            {
                 actions::browse_maps(app, ui.ctx());
                 ui.close();
             }

@@ -38,6 +38,22 @@ pub(super) fn load_map(
     let tileset_changed = new_tileset != app.current_tileset;
     app.current_tileset = new_tileset;
 
+    // Repair maps saved with the editor's old 3-entry terrain table (or with
+    // none at all): backfill the full canonical table for the detected tileset
+    // so cliff and water tiles are typed correctly for the tileset browser,
+    // the heatmap, and in-game pathfinding. Real maps ship the full per-texture
+    // table and are left untouched. The tileset is detected above from the
+    // first-3 signature, which a 3-entry table still carries.
+    let ttp_repaired = match &map.terrain_types {
+        Some(ttp) => ttp.terrain_types.len() <= 3,
+        None => true,
+    };
+    if ttp_repaired {
+        map.terrain_types = Some(wz_maplib::TerrainTypeData {
+            terrain_types: new_tileset.full_terrain_types(),
+        });
+    }
+
     // Persist the tileset so next startup pre-loads the right one.
     let new_name = new_tileset.as_str();
     if app.config.last_tileset.as_deref() != Some(new_name) {
@@ -70,6 +86,11 @@ pub(super) fn load_map(
     }
 
     app.document = Some(MapDocument::new(map));
+    // Mark repaired maps dirty so the backfilled terrain table is written on
+    // the next save, fixing the map on disk for in-game use.
+    if ttp_repaired && let Some(doc) = app.document.as_mut() {
+        doc.dirty = true;
+    }
     // Tile pools are rebuilt lazily by ensure_tile_pools() in update().
     app.terrain_dirty = true;
     app.terrain_dirty_tiles.clear();
@@ -105,6 +126,11 @@ pub(super) fn load_map(
     app.log(format!(
         "Loaded map: {name} ({n_structs} structures, {n_droids} droids, {n_feats} features)"
     ));
+    if ttp_repaired {
+        app.log(format!(
+            "Repaired incomplete terrain table for this {new_tileset} map; save to keep the fix"
+        ));
+    }
 
     app.run_validation();
 }

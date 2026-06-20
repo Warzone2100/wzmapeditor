@@ -246,23 +246,6 @@ pub fn show_menu_bar(ui: &mut Ui, app: &mut EditorApp) {
                 app.generator_dialog.open = true;
                 ui.close();
             }
-            ui.separator();
-            let can_test = app.can_test_map();
-            if ui
-                .add_enabled(
-                    can_test,
-                    egui::Button::new("Test Map").shortcut_text(
-                        app.config
-                            .keymap
-                            .shortcut_text(crate::keybindings::Action::TestMap),
-                    ),
-                )
-                .on_disabled_hover_text(app.test_map_tooltip())
-                .clicked()
-            {
-                app.test_map();
-                ui.close();
-            }
         });
     });
 }

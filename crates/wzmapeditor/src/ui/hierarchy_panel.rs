@@ -67,7 +67,7 @@ pub fn show_hierarchy(ui: &mut Ui, app: &mut EditorApp) {
             let header = format!("Features ({})", map.features.len());
             egui::CollapsingHeader::new(header)
                 .id_salt("hierarchy_features")
-                .default_open(false)
+                .default_open(true)
                 .show(ui, |ui| {
                     for (i, obj) in map.features.iter().enumerate() {
                         let is_selected = selection.contains(&SelectedObject::Feature(i));

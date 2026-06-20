@@ -603,7 +603,7 @@ fn show_gateway_list(ui: &mut Ui, app: &mut EditorApp) {
     let mut delete_idx = None;
 
     egui::ScrollArea::vertical()
-        .max_height(150.0)
+        .auto_shrink([false, false])
         .show(ui, |ui| {
             for (i, gw) in doc.map.map_data.gateways.iter().enumerate() {
                 ui.horizontal(|ui| {
@@ -647,7 +647,7 @@ fn show_label_list(ui: &mut Ui, app: &mut EditorApp) {
     let mut delete_idx = None;
 
     egui::ScrollArea::vertical()
-        .max_height(200.0)
+        .auto_shrink([false, false])
         .show(ui, |ui| {
             for (i, (key, label)) in doc.map.labels.iter().enumerate() {
                 ui.horizontal(|ui| {

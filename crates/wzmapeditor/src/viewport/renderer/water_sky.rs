@@ -6,8 +6,7 @@ use super::super::pipelines;
 use super::super::render_types::WaterState;
 use super::super::water::WaterVertex;
 use super::util::{
-    BindGroupLayoutBuilder, OVERLAY_DEPTH_BIAS, PipelineRecipe, biased_overlay_pipeline,
-    pipeline_with_recipe,
+    BindGroupLayoutBuilder, PipelineRecipe, biased_overlay_pipeline, pipeline_with_recipe,
 };
 
 /// Outputs from [`build`].
@@ -107,11 +106,16 @@ pub(super) fn build(
         target_format,
         PipelineRecipe::SKY,
     );
-    // Negative slope-scale pulls water toward camera, avoiding z-fighting
-    // where the water plane nearly touches lowered terrain.
+    // Pull the water plane toward the camera so it wins the depth test
+    // against the lowered basin terrain. A flat plane has ~zero depth slope,
+    // so a slope-scaled bias is a near-no-op on a correct backend, but it is
+    // implementation-defined: some Win11/Vulkan drivers compute it so water
+    // loses the depth test and the basin shows through ("water not loading").
+    // A constant-only bias is portable and keeps water visible everywhere.
     let water_bias = wgpu::DepthBiasState {
-        slope_scale: -1.0,
-        ..OVERLAY_DEPTH_BIAS
+        constant: -4,
+        slope_scale: 0.0,
+        clamp: 0.0,
     };
     let water_pipeline = biased_overlay_pipeline(
         device,

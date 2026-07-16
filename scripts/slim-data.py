@@ -68,7 +68,8 @@ def optimize_png_in_memory(input_bytes: bytes) -> bytes:
 
 def main() -> int:
     if len(sys.argv) != 3:
-        sys.exit(f"usage: {sys.argv[0]} <input.wz> <output.wz>")
+        print(f"usage: {sys.argv[0]} <input.wz> <output.wz>", file=sys.stderr)
+        return 1
     src, dst = sys.argv[1], sys.argv[2]
 
     kept_files = kept_bytes = dropped_files = dropped_bytes = 0

@@ -74,35 +74,48 @@ def main() -> int:
     kept_files = kept_bytes = dropped_files = dropped_bytes = 0
     dropped_by_top = collections.defaultdict(lambda: [0, 0])
 
-    with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w") as zout:
-        for info in zin.infolist():
-            if info.is_dir():
-                if not should_drop(info.filename):
-                    zout.writestr(info, b"")
-                continue
-            if should_drop(info.filename):
-                dropped_files += 1
-                dropped_bytes += info.file_size
-                top = info.filename.split("/", 1)[0]
-                dropped_by_top[top][0] += 1
-                dropped_by_top[top][1] += info.file_size
-                continue
-            data = zin.read(info.filename)
-            orig_data_len = len(data)
-            if os.path.splitext(info.filename)[1].lower() == '.png':
-                data = optimize_png_in_memory(data)
-            # Preserve the original compression method (base.wz is STORED, which
-            # the in-browser zip reader can slice without inflating).
-            out = zipfile.ZipInfo(info.filename, date_time=info.date_time)
-            out.compress_type = info.compress_type
-            out.external_attr = info.external_attr
-            zout.writestr(out, data)
-            written_data_len = len(data)
-            kept_files += 1
-            kept_bytes += written_data_len
-            print(f"  wrote: {info.filename} {written_data_len/1024:8.2f} KiB")
-            if written_data_len < orig_data_len:
-                print(f"   - (original size: {orig_data_len/1024:8.2f} KiB)")
+    try:
+        with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w") as zout:
+            for info in zin.infolist():
+                if info.is_dir():
+                    if not should_drop(info.filename):
+                        zout.writestr(info, b"")
+                    continue
+                if should_drop(info.filename):
+                    dropped_files += 1
+                    dropped_bytes += info.file_size
+                    top = info.filename.split("/", 1)[0]
+                    dropped_by_top[top][0] += 1
+                    dropped_by_top[top][1] += info.file_size
+                    continue
+                data = zin.read(info.filename)
+                orig_data_len = len(data)
+                if os.path.splitext(info.filename)[1].lower() == '.png':
+                    data = optimize_png_in_memory(data)
+                # Preserve the original compression method (base.wz is STORED, which
+                # the in-browser zip reader can slice without inflating).
+                out = zipfile.ZipInfo(info.filename, date_time=info.date_time)
+                out.compress_type = info.compress_type
+                out.external_attr = info.external_attr
+                zout.writestr(out, data)
+                written_data_len = len(data)
+                kept_files += 1
+                kept_bytes += written_data_len
+                print(f"  wrote: {info.filename} {written_data_len/1024:8.2f} KiB")
+                if written_data_len < orig_data_len:
+                    print(f"   - (original size: {orig_data_len/1024:8.2f} KiB)")
+    except FileNotFoundError:
+        print(f"error: input archive not found: {src}", file=sys.stderr)
+        return 1
+    except zipfile.BadZipFile:
+        print(f"error: invalid or corrupted zip archive: {src}", file=sys.stderr)
+        return 1
+    except PermissionError as exc:
+        print(f"error: permission denied while accessing archives: {exc}", file=sys.stderr)
+        return 1
+    except OSError as exc:
+        print(f"error: filesystem error while processing archives: {exc}", file=sys.stderr)
+        return 1
 
     print(f"{os.path.basename(src)} -> {os.path.basename(dst)}")
     print(f"  kept:    {kept_files:5d} files  {kept_bytes/1e6:8.2f} MB")

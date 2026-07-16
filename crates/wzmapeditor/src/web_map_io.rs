@@ -33,7 +33,9 @@ pub(crate) fn begin_open(app: &mut EditorApp, ctx: &egui::Context) {
     let ctx = ctx.clone();
     dom::pick_file(".wz", move |file| match file {
         Some(file) => spawn_local(async move {
-            let _ = tx.send(read_picked(file).await);
+            if let Err(err) = tx.send(read_picked(file).await) {
+                log::warn!("failed to deliver picked map to poller: {err}");
+            }
             // Wake egui so `poll` runs; nothing else repaints here.
             ctx.request_repaint();
         }),

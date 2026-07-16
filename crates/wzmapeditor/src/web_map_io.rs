@@ -143,9 +143,17 @@ pub(crate) fn download(filename: &str, bytes: &[u8]) -> Result<(), String> {
 
     // Firefox only fires the download for an anchor attached to the document.
     if let Some(body) = document.body() {
-        let _ = body.append_child(&anchor);
+        if let Err(err) = body.append_child(&anchor) {
+            web_sys::console::warn_1(
+                &format!("Failed to append download anchor to body: {err:?}").into(),
+            );
+        }
         anchor.click();
-        let _ = body.remove_child(&anchor);
+        if let Err(err) = body.remove_child(&anchor) {
+            web_sys::console::warn_1(
+                &format!("Failed to remove download anchor from body: {err:?}").into(),
+            );
+        }
     } else {
         anchor.click();
     }

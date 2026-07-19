@@ -100,12 +100,15 @@ pub fn show_toolbar(ui: &mut Ui, app: &mut EditorApp) {
 }
 
 fn show_update_button(ui: &mut Ui, app: &mut EditorApp) {
-    let Some(info) = app.update_available.clone() else {
+    let Some(info) = app.update_available.as_ref() else {
         return;
     };
+    let latest = info.latest.clone();
+    let html_url = info.html_url.clone();
+
     ui.separator();
     let btn = egui::Button::new(
-        egui::RichText::new(format!("Update available: {}", info.latest))
+        egui::RichText::new(format!("Update available: {}", latest))
             .color(egui::Color32::BLACK)
             .strong(),
     )
@@ -114,11 +117,11 @@ fn show_update_button(ui: &mut Ui, app: &mut EditorApp) {
         .add(btn)
         .on_hover_text("Open the release page in your browser");
     if resp.clicked() {
-        ui.ctx().open_url(egui::OpenUrl::new_tab(&info.html_url));
+        ui.ctx().open_url(egui::OpenUrl::new_tab(&html_url));
     }
     resp.context_menu(|ui| {
         if ui.button("Don't show for this version").clicked() {
-            app.config.dismissed_update_version = Some(info.latest.clone());
+            app.config.dismissed_update_version = Some(latest.clone());
             app.config.save();
             app.update_available = None;
             ui.close();

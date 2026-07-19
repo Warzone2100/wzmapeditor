@@ -62,12 +62,15 @@ def optimize_png_in_memory(input_bytes: bytes) -> bytes:
         out_stream = io.BytesIO()
         img.save(out_stream, format="PNG")
 
-    try:
-        optimized = oxipng.optimize_from_memory(out_stream.getvalue(), level=6)
-    except Exception:
-        return input_bytes
+    resized_bytes = out_stream.getvalue()
 
-    return optimized if len(optimized) < len(input_bytes) else input_bytes
+    try:
+        optimized = oxipng.optimize_from_memory(resized_bytes, level=6)
+        best_resized = optimized if len(optimized) < len(resized_bytes) else resized_bytes
+    except Exception:
+        best_resized = resized_bytes
+
+    return best_resized if len(best_resized) < len(input_bytes) else input_bytes
 
 
 def main() -> int:

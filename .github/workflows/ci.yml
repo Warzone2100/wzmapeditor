@@ -223,7 +223,7 @@ jobs:
 
   dispatch-to-deploy-repo:
     needs: [web-bundle]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref_name == 'main'
     name: Deploy Web Bundle
     runs-on: ubuntu-latest
     environment: deploy_web

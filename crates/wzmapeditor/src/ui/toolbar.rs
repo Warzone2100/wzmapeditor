@@ -24,6 +24,8 @@ pub fn show_toolbar(ui: &mut Ui, app: &mut EditorApp) {
 
         let has_doc = app.document.is_some();
         let save_shortcut = app.config.keymap.shortcut_text(Action::Save).to_string();
+        let undo_shortcut = app.config.keymap.shortcut_text(Action::Undo).to_string();
+        let redo_shortcut = app.config.keymap.shortcut_text(Action::Redo).to_string();
 
         if ui.button("New").on_hover_text("New Map").clicked() {
             app.new_map_dialog.open = true;
@@ -44,14 +46,14 @@ pub fn show_toolbar(ui: &mut Ui, app: &mut EditorApp) {
         }
         if ui
             .add_enabled(has_doc, egui::Button::new("Undo"))
-            .on_hover_text("Undo")
+            .on_hover_text(format!("Undo ({undo_shortcut})"))
             .clicked()
         {
             actions::undo(app);
         }
         if ui
             .add_enabled(has_doc, egui::Button::new("Redo"))
-            .on_hover_text("Redo")
+            .on_hover_text(format!("Redo ({redo_shortcut})"))
             .clicked()
         {
             actions::redo(app);

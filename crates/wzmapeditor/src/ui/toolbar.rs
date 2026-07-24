@@ -24,6 +24,8 @@ pub fn show_toolbar(ui: &mut Ui, app: &mut EditorApp) {
 
         let has_doc = app.document.is_some();
         let save_shortcut = app.config.keymap.shortcut_text(Action::Save).to_string();
+        let undo_shortcut = app.config.keymap.shortcut_text(Action::Undo).to_string();
+        let redo_shortcut = app.config.keymap.shortcut_text(Action::Redo).to_string();
 
         if ui.button("New").on_hover_text("New Map").clicked() {
             app.new_map_dialog.open = true;
@@ -44,14 +46,14 @@ pub fn show_toolbar(ui: &mut Ui, app: &mut EditorApp) {
         }
         if ui
             .add_enabled(has_doc, egui::Button::new("Undo"))
-            .on_hover_text("Undo")
+            .on_hover_text(format!("Undo ({undo_shortcut})"))
             .clicked()
         {
             actions::undo(app);
         }
         if ui
             .add_enabled(has_doc, egui::Button::new("Redo"))
-            .on_hover_text("Redo")
+            .on_hover_text(format!("Redo ({redo_shortcut})"))
             .clicked()
         {
             actions::redo(app);
@@ -100,12 +102,15 @@ pub fn show_toolbar(ui: &mut Ui, app: &mut EditorApp) {
 }
 
 fn show_update_button(ui: &mut Ui, app: &mut EditorApp) {
-    let Some(info) = app.update_available.clone() else {
+    let Some(info) = app.update_available.as_ref() else {
         return;
     };
+    let latest = info.latest.clone();
+    let html_url = info.html_url.clone();
+
     ui.separator();
     let btn = egui::Button::new(
-        egui::RichText::new(format!("Update available: {}", info.latest))
+        egui::RichText::new(format!("Update available: {latest}"))
             .color(egui::Color32::BLACK)
             .strong(),
     )
@@ -114,11 +119,11 @@ fn show_update_button(ui: &mut Ui, app: &mut EditorApp) {
         .add(btn)
         .on_hover_text("Open the release page in your browser");
     if resp.clicked() {
-        ui.ctx().open_url(egui::OpenUrl::new_tab(&info.html_url));
+        ui.ctx().open_url(egui::OpenUrl::new_tab(&html_url));
     }
     resp.context_menu(|ui| {
         if ui.button("Don't show for this version").clicked() {
-            app.config.dismissed_update_version = Some(info.latest.clone());
+            app.config.dismissed_update_version = Some(latest.clone());
             app.config.save();
             app.update_available = None;
             ui.close();

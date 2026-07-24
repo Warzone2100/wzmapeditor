@@ -33,7 +33,9 @@ pub(crate) fn begin_open(app: &mut EditorApp, ctx: &egui::Context) {
     let ctx = ctx.clone();
     dom::pick_file(".wz", move |file| match file {
         Some(file) => spawn_local(async move {
-            let _ = tx.send(read_picked(file).await);
+            if let Err(err) = tx.send(read_picked(file).await) {
+                log::warn!("failed to deliver picked map to poller: {err}");
+            }
             // Wake egui so `poll` runs; nothing else repaints here.
             ctx.request_repaint();
         }),
@@ -143,9 +145,13 @@ pub(crate) fn download(filename: &str, bytes: &[u8]) -> Result<(), String> {
 
     // Firefox only fires the download for an anchor attached to the document.
     if let Some(body) = document.body() {
-        let _ = body.append_child(&anchor);
+        if let Err(err) = body.append_child(&anchor) {
+            log::warn!("Failed to append download anchor to body: {err:?}");
+        }
         anchor.click();
-        let _ = body.remove_child(&anchor);
+        if let Err(err) = body.remove_child(&anchor) {
+            log::warn!("Failed to remove download anchor from body: {err:?}");
+        }
     } else {
         anchor.click();
     }

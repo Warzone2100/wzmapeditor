@@ -30,7 +30,7 @@ pub(super) fn build_level_json(map: &WzMap) -> String {
         "generator": GENERATOR,
     });
     if let Some(license) = &map.license {
-        value["license"] = serde_json::json!(license);
+        value["spdx-license-id"] = serde_json::json!(license);
     }
     if let Some(created_date) = &map.created_date {
         value["created-date"] = serde_json::json!(created_date);
@@ -61,8 +61,11 @@ pub(super) fn read_level_json<R: std::io::Read + std::io::Seek>(
     let players = json.get("players")?.as_u64()? as u8;
     let tileset = json.get("tileset")?.as_str()?.to_string();
     let (author, additional_authors) = parse_author(json.get("author"));
+    // Canonical WZ reads `spdx-license-id`; fall back to `license` for maps the
+    // editor already produced.
     let license = json
-        .get("license")
+        .get("spdx-license-id")
+        .or_else(|| json.get("license"))
         .and_then(|v| v.as_str())
         .map(str::to_string);
     let created_date = json

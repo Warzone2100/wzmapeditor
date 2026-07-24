@@ -623,6 +623,17 @@ mod tests {
             Some("CC-BY-SA-3.0 OR GPL-2.0-or-later")
         );
 
+        // The license must be emitted under the `spdx-license-id` key that
+        // canonical WZ and the maps.wz2100.net validator read, not `license`.
+        let mut archive = zip::ZipArchive::new(std::fs::File::open(&wz_path).unwrap()).unwrap();
+        let mut level_file = archive.by_name("level.json").unwrap();
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut level_file, &mut bytes).unwrap();
+        drop(level_file);
+        let level: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(level["spdx-license-id"], "CC-BY-SA-3.0 OR GPL-2.0-or-later");
+        assert!(level.get("license").is_none());
+
         let _ = std::fs::remove_file(&wz_path);
     }
 

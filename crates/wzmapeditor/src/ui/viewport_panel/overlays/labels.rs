@@ -52,7 +52,7 @@ pub(super) fn draw(ui: &mut Ui, app: &mut EditorApp, camera: Option<&Camera>, re
                 let sz = 6.0_f32;
                 let color = Color32::from_rgb(255, 100, 50);
                 painter.circle_filled(screen_pos, sz, color);
-                painter.circle_stroke(screen_pos, sz, Stroke::new(1.0, Color32::BLACK));
+                painter.circle_stroke(screen_pos, sz, Stroke::new(1.0_f32, Color32::BLACK));
                 painter.text(
                     screen_pos + egui::vec2(sz + 4.0, -6.0),
                     egui::Align2::LEFT_TOP,
@@ -82,7 +82,7 @@ pub(super) fn draw(ui: &mut Ui, app: &mut EditorApp, camera: Option<&Camera>, re
                     painter.add(Shape::convex_polygon(
                         vec![a, b, c, d],
                         fill,
-                        Stroke::new(1.5, stroke_color),
+                        Stroke::new(1.5_f32, stroke_color),
                     ));
                     painter.text(
                         screen_pos + egui::vec2(0.0, -12.0),

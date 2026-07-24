@@ -214,7 +214,7 @@ impl Tool for ObjectSelectTool {
             painter.rect_stroke(
                 sel_rect,
                 0.0,
-                egui::Stroke::new(1.5, stroke_color),
+                egui::Stroke::new(1.5_f32, stroke_color),
                 egui::StrokeKind::Inside,
             );
         }

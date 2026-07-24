@@ -729,7 +729,7 @@ fn show_map_card(ui: &mut egui::Ui, entry: &MapEntry) -> bool {
             ui.painter().rect_stroke(
                 response.rect,
                 4.0,
-                egui::Stroke::new(2.0, Color32::from_rgb(100, 180, 255)),
+                egui::Stroke::new(2.0_f32, Color32::from_rgb(100, 180, 255)),
                 egui::StrokeKind::Inside,
             );
         }

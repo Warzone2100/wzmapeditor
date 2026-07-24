@@ -223,7 +223,7 @@ impl DesignerTabs {
 
         egui::Frame::new()
             .fill(Color32::from_rgb(10, 14, 20))
-            .stroke(Stroke::new(1.0, Color32::from_gray(40)))
+            .stroke(Stroke::new(1.0_f32, Color32::from_gray(40)))
             .inner_margin(8)
             .show(ui, |ui| {
                 ui.vertical_centered(|ui| {
@@ -639,7 +639,7 @@ fn render_component_tile(
 
     let frame = egui::Frame::group(ui.style())
         .stroke(Stroke::new(
-            if opt.selected { 2.0 } else { 1.0 },
+            if opt.selected { 2.0_f32 } else { 1.0_f32 },
             stroke_color,
         ))
         .fill(if opt.selected {

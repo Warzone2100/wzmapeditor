@@ -160,7 +160,7 @@ pub(super) fn draw(ui: &mut Ui, app: &mut EditorApp, camera: Option<&Camera>, re
     });
 
     if let Some(boxes) = boxes_opt {
-        let stroke = Stroke::new(1.0, Color32::from_rgb(0, 255, 0));
+        let stroke = Stroke::new(1.0_f32, Color32::from_rgb(0, 255, 0));
         for (center, half) in &boxes {
             draw_aabb_wireframe(&painter, &vp, rect, *center, *half, stroke);
         }

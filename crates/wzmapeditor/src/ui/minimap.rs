@@ -299,14 +299,14 @@ pub fn show_minimap_tab(ui: &mut egui::Ui, app: &mut EditorApp) {
         painter.add(egui::Shape::convex_polygon(
             vec![tip, left, right],
             Color32::WHITE,
-            egui::Stroke::new(1.0, Color32::BLACK),
+            egui::Stroke::new(1.0_f32, Color32::BLACK),
         ));
     }
 
     painter.rect_stroke(
         mm_rect,
         0.0,
-        egui::Stroke::new(1.0, Color32::from_gray(100)),
+        egui::Stroke::new(1.0_f32, Color32::from_gray(100)),
         egui::StrokeKind::Inside,
     );
 

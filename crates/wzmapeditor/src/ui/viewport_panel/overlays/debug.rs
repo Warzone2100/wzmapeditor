@@ -126,7 +126,7 @@ pub(super) fn draw_fps_readout(ui: &mut Ui, app: &mut EditorApp, rect: Rect) {
             egui::Frame::new()
                 .fill(Color32::from_rgba_unmultiplied(0, 0, 0, 180))
                 .stroke(Stroke::new(
-                    1.0,
+                    1.0_f32,
                     Color32::from_rgba_unmultiplied(255, 255, 255, 30),
                 ))
                 .corner_radius(CornerRadius::same(5))

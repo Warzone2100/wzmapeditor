@@ -174,7 +174,7 @@ fn draw_voronoi_boundaries(
     }
 
     if want_lines {
-        let stroke = Stroke::new(1.5, Color32::from_rgba_unmultiplied(255, 255, 255, 200));
+        let stroke = Stroke::new(1.5_f32, Color32::from_rgba_unmultiplied(255, 255, 255, 200));
         for y in 0..map_h {
             let row = &all_rows[y as usize];
             for x in 0..map_w.saturating_sub(1) {
@@ -230,7 +230,7 @@ fn draw_balance_highlights(
         if let Some(p) = project(s.position.x as f32, s.position.y as f32, 14.0) {
             let color = crate::balance::player_color(s.player);
             painter.circle_filled(p, 4.0, fade(color, 200));
-            painter.circle_stroke(p, 4.0, Stroke::new(1.0, outline));
+            painter.circle_stroke(p, 4.0, Stroke::new(1.0_f32, outline));
         }
     }
 
@@ -241,7 +241,7 @@ fn draw_balance_highlights(
         if let Some(p) = project(d.position.x as f32, d.position.y as f32, 12.0) {
             let color = crate::balance::player_color(d.player);
             painter.circle_filled(p, 3.0, fade(color, 200));
-            painter.circle_stroke(p, 3.0, Stroke::new(0.8, outline));
+            painter.circle_stroke(p, 3.0, Stroke::new(0.8_f32, outline));
         }
     }
 
@@ -254,8 +254,8 @@ fn draw_balance_highlights(
             let wz = (ty as f32 + 0.5) * TILE_UNITS;
             if let Some(p) = project(wx, wz, 16.0) {
                 let color = crate::balance::player_color(pid);
-                painter.circle_stroke(p, 5.5, Stroke::new(1.8, fade(color, 230)));
-                painter.circle_stroke(p, 5.5, Stroke::new(0.8, outline));
+                painter.circle_stroke(p, 5.5, Stroke::new(1.8_f32, fade(color, 230)));
+                painter.circle_stroke(p, 5.5, Stroke::new(0.8_f32, outline));
             }
         }
     }

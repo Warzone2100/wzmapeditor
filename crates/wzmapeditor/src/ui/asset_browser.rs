@@ -529,7 +529,7 @@ fn show_grid_card(
                 ui.painter().rect_stroke(
                     r.rect,
                     3.0,
-                    egui::Stroke::new(2.0, egui::Color32::from_rgb(100, 180, 255)),
+                    egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(100, 180, 255)),
                     egui::StrokeKind::Inside,
                 );
             }

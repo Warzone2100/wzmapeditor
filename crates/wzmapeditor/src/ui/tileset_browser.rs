@@ -216,7 +216,7 @@ pub fn show_tileset_browser(
                     } else {
                         egui::Color32::TRANSPARENT
                     })
-                    .stroke(egui::Stroke::new(1.0, color));
+                    .stroke(egui::Stroke::new(1.0_f32, color));
 
                     if ui.add(btn).on_hover_text(&pool.name).clicked() {
                         clicked_group = Some(idx as u8);
@@ -371,7 +371,7 @@ pub fn show_tileset_browser(
             // not bg_stroke, so paint the selection border on top of the
             // response rect. Button::stroke changes the allocated width
             // and makes the wrap layout jitter as tiles flip selected.
-            let selected_stroke = egui::Stroke::new(2.0, selected_color);
+            let selected_stroke = egui::Stroke::new(2.0_f32, selected_color);
 
             render_tile_grid(
                 ui,

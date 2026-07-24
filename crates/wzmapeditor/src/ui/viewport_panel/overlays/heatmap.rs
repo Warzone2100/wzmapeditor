@@ -49,7 +49,7 @@ pub(super) fn draw(ui: &mut Ui, app: &mut EditorApp, rect: Rect) {
         hm_rect,
         4.0,
         Stroke::new(
-            1.0,
+            1.0_f32,
             if is_active {
                 Color32::from_rgb(130, 180, 255)
             } else {
@@ -116,7 +116,7 @@ pub(super) fn draw(ui: &mut Ui, app: &mut EditorApp, rect: Rect) {
             btn_rect,
             4.0,
             Stroke::new(
-                1.0,
+                1.0_f32,
                 if prop_active {
                     Color32::from_rgb(130, 180, 255)
                 } else {
@@ -186,7 +186,7 @@ pub(super) fn draw(ui: &mut Ui, app: &mut EditorApp, rect: Rect) {
     painter.rect_stroke(
         bar_rect,
         2.0,
-        Stroke::new(1.0, Color32::from_rgba_unmultiplied(100, 100, 100, 120)),
+        Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(100, 100, 100, 120)),
         StrokeKind::Inside,
     );
 

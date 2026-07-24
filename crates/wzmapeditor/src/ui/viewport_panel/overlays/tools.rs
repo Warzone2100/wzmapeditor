@@ -58,8 +58,8 @@ pub(super) fn draw_gateways(ui: &mut Ui, app: &mut EditorApp, camera: Option<&Ca
     };
     let gray = Color32::from_rgb(170, 170, 170);
     let fill = Color32::from_rgba_unmultiplied(170, 170, 170, 50);
-    let stroke = Stroke::new(1.5, gray);
-    let sel_stroke = Stroke::new(2.5, Color32::from_rgb(255, 180, 40));
+    let stroke = Stroke::new(1.5_f32, gray);
+    let sel_stroke = Stroke::new(2.5_f32, Color32::from_rgb(255, 180, 40));
     let sel_fill = Color32::from_rgba_unmultiplied(255, 180, 40, 70);
     for (i, gw) in map_data.gateways.iter().enumerate() {
         let x1 = f32::from(gw.x1) * TILE_UNITS;
@@ -136,7 +136,7 @@ pub(super) fn draw_script_label_drag(
         painter.add(Shape::convex_polygon(
             vec![a, b, c, d],
             fill,
-            Stroke::new(2.0, stroke),
+            Stroke::new(2.0_f32, stroke),
         ));
     }
 }
@@ -185,7 +185,7 @@ pub(super) fn draw_stamp(ui: &mut Ui, app: &mut EditorApp, camera: Option<&Camer
             painter.add(Shape::convex_polygon(
                 vec![a, b, c, d],
                 fill,
-                Stroke::new(2.0, stroke),
+                Stroke::new(2.0_f32, stroke),
             ));
         }
     }
@@ -245,7 +245,7 @@ fn draw_stamp_single_preview(
         painter.add(Shape::convex_polygon(
             vec![a, b, c, d],
             fill,
-            Stroke::new(2.0, stroke_color),
+            Stroke::new(2.0_f32, stroke_color),
         ));
     }
 }
@@ -289,7 +289,7 @@ fn draw_stamp_scatter_preview(
         points.push(p);
     }
 
-    let stroke = Stroke::new(2.0, Color32::from_rgba_unmultiplied(80, 200, 255, 220));
+    let stroke = Stroke::new(2.0_f32, Color32::from_rgba_unmultiplied(80, 200, 255, 220));
     points.push(points[0]);
     painter.add(Shape::line(points, stroke));
 }
@@ -411,7 +411,7 @@ pub(super) fn draw_vertex_sculpt(
             let half = 4.5;
             let r = Rect::from_center_size(p, egui::vec2(half * 2.0, half * 2.0));
             painter.rect_filled(r, 1.0, yellow);
-            painter.rect_stroke(r, 1.0, Stroke::new(1.5, outline), StrokeKind::Inside);
+            painter.rect_stroke(r, 1.0, Stroke::new(1.5_f32, outline), StrokeKind::Inside);
         }
     }
 
@@ -423,7 +423,7 @@ pub(super) fn draw_vertex_sculpt(
             let half = 4.5;
             let r = Rect::from_center_size(p, egui::vec2(half * 2.0, half * 2.0));
             painter.rect_filled(r, 1.0, mirror_fill);
-            painter.rect_stroke(r, 1.0, Stroke::new(1.5, yellow), StrokeKind::Inside);
+            painter.rect_stroke(r, 1.0, Stroke::new(1.5_f32, yellow), StrokeKind::Inside);
         }
     }
 
@@ -432,7 +432,7 @@ pub(super) fn draw_vertex_sculpt(
     {
         let r = Rect::from_two_pos(start, end);
         painter.rect_filled(r, 0.0, Color32::from_rgba_unmultiplied(255, 220, 60, 24));
-        painter.rect_stroke(r, 0.0, Stroke::new(1.5, yellow), StrokeKind::Inside);
+        painter.rect_stroke(r, 0.0, Stroke::new(1.5_f32, yellow), StrokeKind::Inside);
     }
 }
 
@@ -507,7 +507,7 @@ pub(super) fn draw_line_preview(
     }
 
     let fill = Color32::from_rgba_unmultiplied(255, 220, 60, 60);
-    let stroke = Stroke::new(1.5, Color32::from_rgba_unmultiplied(255, 220, 60, 220));
+    let stroke = Stroke::new(1.5_f32, Color32::from_rgba_unmultiplied(255, 220, 60, 220));
 
     // Tile corners near the camera near-plane produce tiny positive
     // clip-space `w`; dividing through yields huge NDC values that egui
@@ -570,7 +570,7 @@ pub(super) fn draw_mirror_axis(
     let vp = camera.view_projection_matrix();
     let painter = ui.painter_at(rect);
     let axis_color = Color32::from_rgba_unmultiplied(0, 220, 255, 160);
-    let axis_stroke = Stroke::new(2.0, axis_color);
+    let axis_stroke = Stroke::new(2.0_f32, axis_color);
 
     let project_pt = |x: f32, z: f32| -> Option<Pos2> {
         let y = picking::sample_terrain_height_pub(&doc.map.map_data, x, z) + 30.0;
@@ -657,7 +657,7 @@ pub(super) fn draw_tool_buttons(ui: &mut Ui, app: &mut EditorApp, rect: Rect) {
             btn_rect,
             4.0,
             Stroke::new(
-                1.0,
+                1.0_f32,
                 if is_active {
                     Color32::from_rgb(130, 180, 255)
                 } else {

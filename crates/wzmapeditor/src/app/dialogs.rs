@@ -472,7 +472,7 @@ fn resize_preview_pane(
     painter.rect_stroke(
         rect,
         4.0,
-        egui::Stroke::new(1.0, visuals.widgets.noninteractive.bg_stroke.color),
+        egui::Stroke::new(1.0_f32, visuals.widgets.noninteractive.bg_stroke.color),
         egui::StrokeKind::Inside,
     );
 
@@ -500,14 +500,14 @@ fn resize_preview_pane(
     painter.rect_stroke(
         new_rect,
         0.0,
-        egui::Stroke::new(1.5, visuals.widgets.active.fg_stroke.color),
+        egui::Stroke::new(1.5_f32, visuals.widgets.active.fg_stroke.color),
         egui::StrokeKind::Inside,
     );
     painter.rect_stroke(
         src_rect,
         0.0,
         egui::Stroke::new(
-            1.0,
+            1.0_f32,
             visuals.widgets.inactive.fg_stroke.color.gamma_multiply(0.7),
         ),
         egui::StrokeKind::Inside,
@@ -539,7 +539,7 @@ fn resize_preview_pane(
     painter.rect_stroke(
         cell_rect(sr, sc).shrink(2.0),
         2.0,
-        egui::Stroke::new(1.5, visuals.selection.stroke.color),
+        egui::Stroke::new(1.5_f32, visuals.selection.stroke.color),
         egui::StrokeKind::Inside,
     );
 

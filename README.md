@@ -10,6 +10,12 @@
 
 ---
 
+## Try it online
+
+A browser build runs at **[mapeditor.wz2100.net](https://mapeditor.wz2100.net)**.
+
+---
+
 ## Requirements
 
 - A [Warzone 2100](https://wz2100.net/) 4.x installation
@@ -44,6 +50,8 @@ git clone https://github.com/Warzone2100/wzmapeditor
 cd wzmapeditor
 cargo build --release
 ```
+
+The latest `main` is deployed at [dev.mapeditor.wz2100.net](https://dev.mapeditor.wz2100.net).
 
 For a debug build with logging:
 

@@ -609,6 +609,12 @@ pub(super) fn draw_mirror_axis(
             draw_line(0.0, 0.0, map_w, map_h);
             draw_line(map_w, 0.0, 0.0, map_h);
         }
+        MirrorMode::Central => {
+            // Point symmetry has no axis line; mark the centre of rotation.
+            if let Some(c) = project_pt(cx, cz) {
+                painter.circle_stroke(c, 8.0_f32, axis_stroke);
+            }
+        }
     }
 }
 

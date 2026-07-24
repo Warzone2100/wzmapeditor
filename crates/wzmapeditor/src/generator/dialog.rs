@@ -140,6 +140,7 @@ fn show_config(ui: &mut egui::Ui, app: &mut EditorApp) {
             (MirrorMode::Vertical, "Vertical (left/right)"),
             (MirrorMode::Horizontal, "Horizontal (top/bottom)"),
             (MirrorMode::Both, "Both (4-way)"),
+            (MirrorMode::Central, "Central (180°)"),
             (MirrorMode::Diagonal, "Diagonal (rotational)"),
         ];
         egui::ComboBox::from_id_salt("gen_symmetry")

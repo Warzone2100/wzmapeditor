@@ -115,6 +115,12 @@ fn mirror_coords(x: u32, y: u32, axis_x: u32, axis_y: u32, mode: MirrorMode) -> 
             push_unique(&mut pts, (s.saturating_sub(y), s.saturating_sub(x)));
             push_unique(&mut pts, (s.saturating_sub(x), s.saturating_sub(y)));
         }
+        MirrorMode::Central => {
+            push_unique(
+                &mut pts,
+                (axis_x.saturating_sub(x), axis_y.saturating_sub(y)),
+            );
+        }
     }
 
     pts
@@ -184,6 +190,10 @@ pub fn mirror_orientation(
                 yf = !yf;
             }
         },
+        MirrorMode::Central => {
+            xf = !xf;
+            yf = !yf;
+        }
     }
 
     sa_to_rot(sa, xf, yf)
@@ -216,6 +226,7 @@ pub fn mirror_direction(direction: u16, mode: MirrorMode, point_index: usize) ->
                 _ => (dir.wrapping_add(0x8000) & 0xFFFF) as u16,
             }
         }
+        MirrorMode::Central => (dir.wrapping_add(0x8000) & 0xFFFF) as u16,
     }
 }
 
@@ -276,6 +287,14 @@ mod tests {
     }
 
     #[test]
+    fn test_mirror_central() {
+        // 180° point reflection: (3,5) on 10x10 maps to (9-3, 9-5) = (6,4),
+        // exactly 2 copies with the endpoints swapped (rotation, not mirror).
+        let pts = mirror_points(3, 5, 10, 10, MirrorMode::Central);
+        assert_eq!(pts, vec![(3, 5), (6, 4)]);
+    }
+
+    #[test]
     fn test_mirror_on_axis_dedup() {
         // x=4 on a 9-wide map mirrors to itself (9-1-4 = 4) so dedup.
         let pts = mirror_points(4, 3, 9, 9, MirrorMode::Vertical);
@@ -303,6 +322,7 @@ mod tests {
             MirrorMode::Horizontal,
             MirrorMode::Both,
             MirrorMode::Diagonal,
+            MirrorMode::Central,
         ] {
             let pts = mirror_points(0, 0, 1, 1, mode);
             assert_eq!(
@@ -400,6 +420,13 @@ mod tests {
     }
 
     #[test]
+    fn test_orient_central_is_180() {
+        // Central is a 180° rotation, matching Both's point 3.
+        let (r, xf, yf) = mirror_orientation(0, false, false, MirrorMode::Central, 1);
+        assert_eq!((r, xf, yf), (2, false, false));
+    }
+
+    #[test]
     fn test_orient_roundtrip() {
         // Compare SA states because sa_to_rot normalises yf=false.
         for rot in 0..4u8 {
@@ -473,6 +500,12 @@ mod tests {
         assert_eq!(mirror_direction(0, MirrorMode::Both, 1), 0);
         assert_eq!(mirror_direction(0, MirrorMode::Both, 2), 0x8000);
         assert_eq!(mirror_direction(0, MirrorMode::Both, 3), 0x8000);
+    }
+
+    #[test]
+    fn test_dir_central_180() {
+        // Central adds a half-turn: east (0x4000) becomes west (0xC000).
+        assert_eq!(mirror_direction(0x4000, MirrorMode::Central, 1), 0xC000);
     }
 
     #[test]

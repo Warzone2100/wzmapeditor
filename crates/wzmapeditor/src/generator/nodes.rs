@@ -132,7 +132,7 @@ fn place_players(
 
     let mirror_count = match symmetry {
         MirrorMode::None => 1,
-        MirrorMode::Vertical | MirrorMode::Horizontal => 2,
+        MirrorMode::Vertical | MirrorMode::Horizontal | MirrorMode::Central => 2,
         MirrorMode::Both | MirrorMode::Diagonal => 4,
     };
 
@@ -206,7 +206,10 @@ fn pick_base_position(
     // Symmetric modes anchor the primary base in the top-left sector; mirror
     // points fill the rest.
     let (x_min, x_max, y_min, y_max) = match symmetry {
-        MirrorMode::Vertical => (1, grid_w / 2 - 1, 1, grid_h - 2),
+        // Central (180°) flips both axes, so restricting the seed to the left
+        // half alone keeps a base and its rotation apart; it reuses Vertical's
+        // bounds (restricting either single axis would work equally well).
+        MirrorMode::Vertical | MirrorMode::Central => (1, grid_w / 2 - 1, 1, grid_h - 2),
         MirrorMode::Horizontal => (1, grid_w - 2, 1, grid_h / 2 - 1),
         MirrorMode::Both | MirrorMode::Diagonal => (1, grid_w / 2 - 1, 1, grid_h / 2 - 1),
         MirrorMode::None => {
@@ -454,6 +457,28 @@ mod tests {
         let n0 = &net.nodes[net.player_nodes[0]];
         let n1 = &net.nodes[net.player_nodes[1]];
         assert_ne!(n0.gx, n1.gx, "Players should not be at the same X");
+    }
+
+    #[test]
+    fn test_player_placement_central_symmetry() {
+        let config = GeneratorConfig {
+            width: 128,
+            height: 128,
+            players: 2,
+            symmetry: MirrorMode::Central,
+            ..default_config()
+        };
+        let mut rng = fastrand::Rng::with_seed(42);
+        let net = build_node_network(&config, &mut rng);
+
+        assert_eq!(net.player_nodes.len(), 2);
+        let n0 = &net.nodes[net.player_nodes[0]];
+        let n1 = &net.nodes[net.player_nodes[1]];
+        // 180° point symmetry: the pair reflects through the grid centre, so
+        // each coordinate sums to the grid maximum (unlike an axis mirror,
+        // which would leave one coordinate shared).
+        assert_eq!(n0.gx + n1.gx, net.grid_w - 1);
+        assert_eq!(n0.gy + n1.gy, net.grid_h - 1);
     }
 
     #[test]

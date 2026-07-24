@@ -28,6 +28,8 @@ pub enum MirrorMode {
     Both,
     /// Reflect across both diagonals (4-way rotational, square maps only).
     Diagonal,
+    /// Point reflection through the map centre (180° rotation). Any map size.
+    Central,
 }
 
 /// Tool identity used for keybindings, palette dispatch, and the

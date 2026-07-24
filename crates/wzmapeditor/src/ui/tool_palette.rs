@@ -161,7 +161,7 @@ fn show_mirror_controls(ui: &mut Ui, app: &mut EditorApp) {
     ui.label("Mirror");
     ui.horizontal(|ui| {
         use crate::tools::MirrorMode;
-        let modes: [(MirrorMode, &str, &str); 5] = [
+        let modes = [
             (MirrorMode::None, "Off", "No mirroring"),
             (MirrorMode::Vertical, "|", "Vertical axis (left/right)"),
             (
@@ -170,6 +170,7 @@ fn show_mirror_controls(ui: &mut Ui, app: &mut EditorApp) {
                 "Horizontal axis (top/bottom)",
             ),
             (MirrorMode::Both, "+", "Both axes (4-way)"),
+            (MirrorMode::Central, "O", "Central (180° rotation)"),
             (
                 MirrorMode::Diagonal,
                 "X",

@@ -415,6 +415,8 @@ mod tests {
             MirrorMode::Vertical,
             MirrorMode::Horizontal,
             MirrorMode::Both,
+            MirrorMode::Central,
+            MirrorMode::Diagonal,
         ] {
             let config = GeneratorConfig {
                 symmetry: mode,

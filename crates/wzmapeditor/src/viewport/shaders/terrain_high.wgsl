@@ -18,7 +18,7 @@ struct Uniforms {
 @group(0) @binding(1) var lightmap_texture: texture_2d<f32>;
 @group(0) @binding(2) var lightmap_sampler: sampler;
 
-@group(1) @binding(0) var atlas_texture: texture_2d<f32>;
+@group(1) @binding(0) var atlas_texture: texture_2d_array<f32>;
 @group(1) @binding(1) var atlas_sampler: sampler;
 
 @group(2) @binding(0) var shadow_map: texture_depth_2d;

@@ -355,47 +355,15 @@ impl GroundTextureState {
         ground_scales: &[f32; 16],
     ) {
         let tex_size = 1024u32;
-        let texture_layers = super::atlas_gpu::pad_d2_array_layers(num_layers);
-
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("ground_texture_array"),
-            size: wgpu::Extent3d {
-                width: tex_size,
-                height: tex_size,
-                depth_or_array_layers: texture_layers,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
+        let view = super::atlas_gpu::upload_texture_array(
+            device,
+            queue,
+            "ground_texture_array",
             data,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * tex_size),
-                rows_per_image: Some(tex_size),
-            },
-            wgpu::Extent3d {
-                width: tex_size,
-                height: tex_size,
-                depth_or_array_layers: num_layers,
-            },
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            tex_size,
+            num_layers,
         );
-
-        let view = texture.create_view(&wgpu::TextureViewDescriptor {
-            dimension: Some(wgpu::TextureViewDimension::D2Array),
-            ..Default::default()
-        });
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("ground_sampler"),
@@ -403,6 +371,8 @@ impl GroundTextureState {
             address_mode_v: wgpu::AddressMode::Repeat,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
+            anisotropy_clamp: super::atlas_gpu::MAX_ANISOTROPY,
             ..Default::default()
         });
 
@@ -458,15 +428,20 @@ impl GroundTextureState {
             address_mode_v: wgpu::AddressMode::Repeat,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
+            anisotropy_clamp: super::atlas_gpu::MAX_ANISOTROPY,
             ..Default::default()
         });
 
+        // Decals are ClampToEdge and non-tiling, so they take trilinear
+        // filtering but not anisotropy (which only helps repeated tiling).
         let decal_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("decal_sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
 

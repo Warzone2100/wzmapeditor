@@ -311,17 +311,17 @@ impl super::EditorRenderer {
         update_tile_rect(queue, gpu, map, ground_data, min_tx, min_ty, max_tx, max_ty);
     }
 
-    /// Upload a tileset atlas texture to the GPU.
+    /// Upload the tileset tile array (one 256px layer per tile) to the GPU.
     pub fn upload_atlas(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        atlas_rgba: &[u8],
-        atlas_width: u32,
-        atlas_height: u32,
+        tile_rgba: &[u8],
+        tile_size: u32,
+        num_layers: u32,
     ) {
         self.atlas
-            .upload(device, queue, atlas_rgba, atlas_width, atlas_height);
+            .upload(device, queue, tile_rgba, tile_size, num_layers);
     }
 
     /// Upload ground type textures as a 2D texture array for Medium quality.

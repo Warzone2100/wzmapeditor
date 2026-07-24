@@ -18,9 +18,9 @@ var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var lightmap_texture: texture_2d<f32>;
 @group(0) @binding(2) var lightmap_sampler: sampler;
 
-// Classic tile atlas (used for decal overlay)
+// Classic tile array (used for decal overlay), one tile per layer.
 @group(1) @binding(0)
-var atlas_texture: texture_2d<f32>;
+var atlas_texture: texture_2d_array<f32>;
 @group(1) @binding(1)
 var atlas_sampler: sampler;
 
@@ -135,19 +135,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // The decal atlas sample is hoisted out of the `tile_no >= 0` branch:
     // WebGPU forbids implicit-LOD sampling in non-uniform control flow, and
-    // tile_no is a per-fragment (flat) varying. The atlas UV is always valid.
-    let atlas_cols = 16u;
-    let tile_col = in.tile_index % atlas_cols;
-    let tile_row = in.tile_index / atlas_cols;
-    let tile_size = 1.0 / f32(atlas_cols);
-
-    let half_pixel = 0.5 / 256.0;
-    let uv_clamped = clamp(in.tex_coord, vec2<f32>(half_pixel), vec2<f32>(1.0 - half_pixel));
-    let atlas_uv = vec2<f32>(
-        (f32(tile_col) + uv_clamped.x) * tile_size,
-        (f32(tile_row) + uv_clamped.y) * tile_size,
-    );
-    let decal = textureSample(atlas_texture, atlas_sampler, atlas_uv);
+    // tile_no is a per-fragment (flat) varying. The layer index is always valid.
+    let layer = i32(min(in.tile_index, textureNumLayers(atlas_texture) - 1u));
+    let decal = textureSample(atlas_texture, atlas_sampler, in.tex_coord, layer);
 
     var base_color = ground_color;
     if in.tile_no >= 0 {

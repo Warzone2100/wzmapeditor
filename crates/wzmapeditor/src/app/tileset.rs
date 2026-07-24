@@ -36,12 +36,16 @@ pub(super) fn try_load_tileset(app: &mut EditorApp, ctx: &egui::Context) {
             .callback_resources
             .get_mut::<crate::viewport::ViewportResources>()
         {
-            resources
-                .renderer
-                .upload_atlas(device, queue, &atlas.data, atlas.width, atlas.height);
+            resources.renderer.upload_atlas(
+                device,
+                queue,
+                &atlas.data,
+                atlas.tile_size,
+                atlas.layers,
+            );
             atlas_msg = Some(format!(
-                "Uploaded tileset atlas: {} tiles, {}x{}",
-                atlas.tile_count, atlas.width, atlas.height
+                "Uploaded tileset atlas: {} tiles ({} layers x {}px)",
+                atlas.tile_count, atlas.layers, atlas.tile_size
             ));
         }
     }

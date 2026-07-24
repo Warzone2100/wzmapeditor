@@ -250,6 +250,120 @@ pub fn linear_to_srgb(img: &mut image::RgbaImage) {
     }
 }
 
+/// Decode one sRGB-encoded byte to its linear-light value in `[0, 1]`.
+///
+/// Inverse of [`linear_to_srgb_u8`], sharing the piecewise curve and
+/// breakpoint used by [`linear_to_srgb`] so the pair round-trips. Mip
+/// downsampling averages in linear light through this decode.
+pub(crate) fn srgb_to_linear(v: u8) -> f32 {
+    let s = f32::from(v) / 255.0;
+    if s <= 0.040_45 {
+        s / 12.92
+    } else {
+        ((s + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+/// Encode a linear-light value in `[0, 1]` back to an sRGB byte.
+///
+/// Inverse of [`srgb_to_linear`]; shares the encode branch with
+/// [`linear_to_srgb`].
+pub(crate) fn linear_to_srgb_u8(linear: f32) -> u8 {
+    let srgb = if linear <= 0.003_130_8 {
+        linear * 12.92
+    } else {
+        1.055 * linear.powf(1.0 / 2.4) - 0.055
+    };
+    (srgb * 255.0 + 0.5).clamp(0.0, 255.0) as u8
+}
+
+/// One generated mip level: tightly packed RGBA8 at `width` x `height`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MipLevel {
+    pub data: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Box-filter an RGBA8 image to half size (rounded down, floored at 1).
+///
+/// When `srgb`, RGB is decoded to linear light before averaging and
+/// re-encoded, so minification stays gamma-correct: a naive byte average
+/// darkens tiled ground textures at distance. Alpha carries no gamma and is
+/// always the raw byte mean. Source coordinates are clamped so odd dimensions
+/// degrade gracefully -- inputs are power-of-two in practice.
+pub(crate) fn downsample_2x(src: &[u8], w: u32, h: u32, srgb: bool) -> MipLevel {
+    let dst_w = (w / 2).max(1);
+    let dst_h = (h / 2).max(1);
+    let mut data = vec![0u8; dst_w as usize * dst_h as usize * 4];
+    // Decode sRGB bytes through a 256-entry table: srgb_to_linear's per-sample
+    // powf otherwise dominates the whole CPU-side mip upload (~12 decodes/pixel).
+    let lut: Option<[f32; 256]> = srgb.then(|| std::array::from_fn(|v| srgb_to_linear(v as u8)));
+
+    for dy in 0..dst_h {
+        let sy0 = (dy * 2).min(h - 1);
+        let sy1 = (sy0 + 1).min(h - 1);
+        for dx in 0..dst_w {
+            let sx0 = (dx * 2).min(w - 1);
+            let sx1 = (sx0 + 1).min(w - 1);
+
+            let px = |x: u32, y: u32| ((y * w + x) * 4) as usize;
+            let corners = [px(sx0, sy0), px(sx1, sy0), px(sx0, sy1), px(sx1, sy1)];
+            let out = (dy * dst_w + dx) as usize * 4;
+
+            for c in 0..3 {
+                data[out + c] = if let Some(lut) = &lut {
+                    let sum: f32 = corners.iter().map(|&p| lut[usize::from(src[p + c])]).sum();
+                    linear_to_srgb_u8(sum / 4.0)
+                } else {
+                    let sum: u32 = corners.iter().map(|&p| u32::from(src[p + c])).sum();
+                    ((sum + 2) / 4) as u8
+                };
+            }
+            let alpha: u32 = corners.iter().map(|&p| u32::from(src[p + 3])).sum();
+            data[out + 3] = ((alpha + 2) / 4) as u8;
+        }
+    }
+
+    MipLevel {
+        data,
+        width: dst_w,
+        height: dst_h,
+    }
+}
+
+/// Build a full mip chain from a base RGBA8 image.
+///
+/// Level 0 is `base`; each subsequent level is [`downsample_2x`] of the last,
+/// stopping at 1x1 or after `max_levels` (when `Some`). For a power-of-two
+/// square input the full chain is `size.ilog2() + 1` levels.
+#[cfg(test)]
+pub(crate) fn generate_mip_chain(
+    base: &[u8],
+    w: u32,
+    h: u32,
+    srgb: bool,
+    max_levels: Option<u32>,
+) -> Vec<MipLevel> {
+    let mut levels = vec![MipLevel {
+        data: base.to_vec(),
+        width: w,
+        height: h,
+    }];
+    loop {
+        if max_levels.is_some_and(|max| levels.len() as u32 >= max) {
+            break;
+        }
+        let last = levels.last().expect("chain always has level 0");
+        if last.width <= 1 && last.height <= 1 {
+            break;
+        }
+        let next = downsample_2x(&last.data, last.width, last.height, srgb);
+        levels.push(next);
+    }
+    levels
+}
+
 /// Run per-layer texture loads in parallel across scoped threads, collecting
 /// results in source order, for I/O throughput.
 ///
@@ -918,5 +1032,116 @@ mod tests {
         assert_eq!(px[3], 200);
         // Linear 128/255 encodes to ~188 in sRGB; allow a little rounding slack.
         assert!((187..=189).contains(&px[1]), "got {}", px[1]);
+    }
+
+    #[test]
+    fn mip_chain_level_count_and_dims() {
+        let base = vec![0u8; 1024 * 1024 * 4];
+        let chain = generate_mip_chain(&base, 1024, 1024, false, None);
+        assert_eq!(chain.len(), 11);
+        for (i, level) in chain.iter().enumerate() {
+            let expected = 1024u32 >> i;
+            assert_eq!((level.width, level.height), (expected, expected));
+            assert_eq!(level.data.len() as u32, expected * expected * 4);
+        }
+        assert_eq!((chain[10].width, chain[10].height), (1, 1));
+
+        let base256 = vec![0u8; 256 * 256 * 4];
+        let chain256 = generate_mip_chain(&base256, 256, 256, false, None);
+        assert_eq!(chain256.len(), 9);
+        assert_eq!((chain256[8].width, chain256[8].height), (1, 1));
+
+        // Capping stops the chain before 1x1: 1024 -> 512 -> ... -> 32.
+        let capped = generate_mip_chain(&base, 1024, 1024, false, Some(6));
+        assert_eq!(capped.len(), 6);
+        assert_eq!((capped[5].width, capped[5].height), (32, 32));
+    }
+
+    #[test]
+    fn mip_chain_preserves_solid_color() {
+        let color = [200u8, 100, 50, 180];
+        for srgb in [false, true] {
+            let mut base = Vec::with_capacity(64 * 64 * 4);
+            for _ in 0..64 * 64 {
+                base.extend_from_slice(&color);
+            }
+            let chain = generate_mip_chain(&base, 64, 64, srgb, None);
+            for level in &chain {
+                for px in level.data.chunks_exact(4) {
+                    for c in 0..4 {
+                        assert!(
+                            (i16::from(px[c]) - i16::from(color[c])).abs() <= 1,
+                            "srgb={srgb} channel {c}: got {} want {}",
+                            px[c],
+                            color[c],
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn downsample_srgb_false_is_exact_byte_mean() {
+        // One 2x2 block of distinct values -> 1x1 rounded mean (n+2)/4.
+        let src = [
+            10, 20, 30, 40, //
+            50, 60, 70, 80, //
+            90, 100, 110, 120, //
+            130, 140, 150, 160,
+        ];
+        let mip = downsample_2x(&src, 2, 2, false);
+        assert_eq!((mip.width, mip.height), (1, 1));
+        assert_eq!(&mip.data, &[70, 80, 90, 100]);
+    }
+
+    #[test]
+    fn downsample_srgb_false_matches_rounded_mean_formula() {
+        let src = [
+            3, 250, 17, 99, //
+            200, 4, 128, 1, //
+            60, 61, 62, 63, //
+            7, 254, 9, 255,
+        ];
+        let mip = downsample_2x(&src, 2, 2, false);
+        for c in 0..4 {
+            let sum = u32::from(src[c])
+                + u32::from(src[4 + c])
+                + u32::from(src[8 + c])
+                + u32::from(src[12 + c]);
+            assert_eq!(u32::from(mip.data[c]), (sum + 2) / 4, "channel {c}");
+        }
+    }
+
+    #[test]
+    fn downsample_srgb_true_is_gamma_correct() {
+        // Two black + two white texels. The gamma-correct mean is linear 0.5,
+        // re-encoding to ~188 in sRGB -- explicitly not the naive byte mean 127.
+        let src = [
+            0, 0, 0, 0, //
+            255, 255, 255, 255, //
+            0, 0, 0, 0, //
+            255, 255, 255, 255,
+        ];
+        let mip = downsample_2x(&src, 2, 2, true);
+        let r = mip.data[0];
+        assert!(
+            (187..=189).contains(&r),
+            "gamma-correct mean should be ~188, got {r}"
+        );
+    }
+
+    #[test]
+    fn downsample_srgb_true_averages_alpha_as_raw_bytes() {
+        // Alpha carries no gamma: with srgb=true it must still be the raw byte
+        // mean. Two alpha=0 + two alpha=255 -> ~128, not the gamma-decoded 188.
+        let src = [
+            0, 0, 0, 0, //
+            0, 0, 0, 255, //
+            0, 0, 0, 0, //
+            0, 0, 0, 255,
+        ];
+        let mip = downsample_2x(&src, 2, 2, true);
+        assert_eq!(mip.data[3], 128);
     }
 }

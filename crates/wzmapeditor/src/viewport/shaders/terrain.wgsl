@@ -19,7 +19,7 @@ var<uniform> uniforms: Uniforms;
 @group(0) @binding(2) var lightmap_sampler: sampler;
 
 @group(1) @binding(0)
-var atlas_texture: texture_2d<f32>;
+var atlas_texture: texture_2d_array<f32>;
 @group(1) @binding(1)
 var atlas_sampler: sampler;
 
@@ -106,21 +106,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var base_color: vec3<f32>;
 
     if has_atlas {
-        let atlas_cols = 16u;
-        let tile_col = in.tile_index % atlas_cols;
-        let tile_row = in.tile_index / atlas_cols;
-        let tile_size = 1.0 / f32(atlas_cols);
-
-        // Half-pixel inset prevents bleeding from neighboring atlas tiles.
-        let half_pixel = 0.5 / 256.0;
-        let uv_clamped = clamp(in.tex_coord, vec2<f32>(half_pixel), vec2<f32>(1.0 - half_pixel));
-        let atlas_uv = vec2<f32>(
-            (f32(tile_col) + uv_clamped.x) * tile_size,
-            (f32(tile_row) + uv_clamped.y) * tile_size,
-        );
-
+        // Each tile is its own array layer with an independent mip chain, so
+        // ClampToEdge trilinear sampling never bleeds a neighbouring tile.
+        let layer = i32(min(in.tile_index, textureNumLayers(atlas_texture) - 1u));
         // Classic atlas tiles are pre-composited darker than Medium/High ground textures.
-        base_color = textureSample(atlas_texture, atlas_sampler, atlas_uv).rgb * 1.35;
+        base_color = textureSample(atlas_texture, atlas_sampler, in.tex_coord, layer).rgb * 1.35;
     } else {
         // Height-based Arizona desert palette fallback.
         let h = in.height_color;

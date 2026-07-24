@@ -2,24 +2,25 @@
 
 use std::path::Path;
 
-/// 16x16 grid is required by the shader: `tile_size = 1.0 / atlas_cols`
-/// is used for both U and V, so the atlas must be square.
-const ATLAS_COLS: u32 = 16;
+/// Each tile is uploaded as its own layer of a texture array so it gets an
+/// independent mip chain. A packed atlas would bleed neighbouring tiles across
+/// shared edges at coarse mips (no gutters), producing bright tile-edge seams.
 const TILE_SIZE: u32 = 256;
 
-/// Built tile atlas, ready for GPU upload.
+/// Built tile texture array, ready for GPU upload: `layers` × `tile_size`²
+/// RGBA8, one tile per layer.
 pub struct TileAtlas {
     pub data: Vec<u8>,
-    pub width: u32,
-    pub height: u32,
+    pub tile_size: u32,
+    pub layers: u32,
     pub tile_count: u32,
 }
 
 impl std::fmt::Debug for TileAtlas {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TileAtlas")
-            .field("width", &self.width)
-            .field("height", &self.height)
+            .field("tile_size", &self.tile_size)
+            .field("layers", &self.layers)
             .field("tile_count", &self.tile_count)
             .finish_non_exhaustive()
     }
@@ -48,20 +49,22 @@ impl TileAtlas {
             return None;
         }
 
-        let atlas_width = ATLAS_COLS * TILE_SIZE;
-        let atlas_height = ATLAS_COLS * TILE_SIZE;
-        let mut data = vec![0u8; (atlas_width * atlas_height * 4) as usize];
+        let tile_size = TILE_SIZE;
+        let layers = max_index + 1;
+        let layer_bytes = (tile_size * tile_size * 4) as usize;
 
         // Neutral desert tan if tile-00 fails to load.
         let fallback_rgb =
             compute_tile_avg_opaque_color(assets, tileset_rel, 0).unwrap_or([0x80, 0x70, 0x50]);
 
-        // Pre-fill so missing tile slots render as the fallback, not black.
-        for pixel_offset in (0..data.len()).step_by(4) {
-            data[pixel_offset] = fallback_rgb[0];
-            data[pixel_offset + 1] = fallback_rgb[1];
-            data[pixel_offset + 2] = fallback_rgb[2];
-            data[pixel_offset + 3] = 255;
+        // One layer per tile slot, pre-filled with the fallback so slots with
+        // no source image render as tan rather than black.
+        let mut data = vec![0u8; layer_bytes * layers as usize];
+        for px in data.chunks_exact_mut(4) {
+            px[0] = fallback_rgb[0];
+            px[1] = fallback_rgb[1];
+            px[2] = fallback_rgb[2];
+            px[3] = 255;
         }
 
         for i in 0u32..=max_index {
@@ -78,51 +81,32 @@ impl TileAtlas {
                 }
             };
 
-            let col = i % ATLAS_COLS;
-            let row = i / ATLAS_COLS;
-            let dst_x = col * TILE_SIZE;
-            let dst_y = row * TILE_SIZE;
-
             // Source tiles ship at 128px; upscale to TILE_SIZE when needed.
-            let resized;
-            let tile_img = if img.width() != TILE_SIZE || img.height() != TILE_SIZE {
-                resized = image::imageops::resize(
-                    &img,
-                    TILE_SIZE,
-                    TILE_SIZE,
-                    image::imageops::FilterType::Lanczos3,
-                );
-                &resized
+            // Preserve alpha (Medium's decal overlay uses it; Classic ignores it).
+            let tile_data = if img.width() == tile_size && img.height() == tile_size {
+                img.into_raw()
             } else {
-                &img
+                image::imageops::resize(
+                    &img,
+                    tile_size,
+                    tile_size,
+                    image::imageops::FilterType::Lanczos3,
+                )
+                .into_raw()
             };
 
-            // Preserve alpha: Medium uses it to blend decals over ground
-            // splatting; Classic ignores it.
-            for py in 0..TILE_SIZE {
-                for px in 0..TILE_SIZE {
-                    let pixel = tile_img.get_pixel(px, py);
-                    let dst_offset = ((dst_y + py) * atlas_width + (dst_x + px)) as usize * 4;
-                    if dst_offset + 3 >= data.len() {
-                        continue;
-                    }
-
-                    data[dst_offset] = pixel[0];
-                    data[dst_offset + 1] = pixel[1];
-                    data[dst_offset + 2] = pixel[2];
-                    data[dst_offset + 3] = pixel[3];
-                }
-            }
+            let offset = i as usize * layer_bytes;
+            data[offset..offset + layer_bytes].copy_from_slice(&tile_data);
         }
 
         log::info!(
-            "Built tileset atlas: {tile_count} tiles, {atlas_width}x{atlas_height} pixels (fallback RGB: {fallback_rgb:?})"
+            "Built tileset atlas: {tile_count} tiles, {layers} layers x {tile_size}px (fallback RGB: {fallback_rgb:?})"
         );
 
         Some(TileAtlas {
             data,
-            width: atlas_width,
-            height: atlas_height,
+            tile_size,
+            layers,
             tile_count,
         })
     }
@@ -200,14 +184,13 @@ mod tests {
     }
 
     #[test]
-    fn atlas_constants_produce_4096_square() {
-        // 16 columns × 256px tiles = 4096px per side.
-        assert_eq!(ATLAS_COLS * TILE_SIZE, 4096);
+    fn tile_size_is_256() {
+        assert_eq!(TILE_SIZE, 256);
     }
 
     #[test]
-    fn built_atlas_is_square_4096() {
-        let dir = std::env::temp_dir().join("wz2100_atlas_test_square");
+    fn built_atlas_has_one_layer_per_tile() {
+        let dir = std::env::temp_dir().join("wz2100_atlas_test_layers");
         let _ = std::fs::create_dir_all(&dir);
 
         let img = image::RgbaImage::from_pixel(128, 128, image::Rgba([255, 0, 0, 255]));
@@ -216,9 +199,12 @@ mod tests {
 
         let atlas = TileAtlas::build(&fs(&dir), Path::new(""))
             .expect("Expected Some atlas from directory with one tile");
-        assert_eq!(atlas.width, 4096);
-        assert_eq!(atlas.height, 4096);
+        assert_eq!(atlas.tile_size, 256);
+        assert_eq!(atlas.layers, 1);
         assert_eq!(atlas.tile_count, 1);
+        assert_eq!(atlas.data.len(), 256 * 256 * 4);
+        // The 128px source upscales to solid 256px red.
+        assert_eq!(&atlas.data[0..4], &[255, 0, 0, 255]);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -158,12 +158,12 @@ pub fn poll_startup_loads(ctx: &egui::Context, app: &mut EditorApp) {
                         device,
                         queue,
                         &atlas.data,
-                        atlas.width,
-                        atlas.height,
+                        atlas.tile_size,
+                        atlas.layers,
                     );
                     atlas_msg = Some(format!(
-                        "Uploaded tileset atlas: {} tiles, {}x{}",
-                        atlas.tile_count, atlas.width, atlas.height
+                        "Uploaded tileset atlas: {} tiles ({} layers x {}px)",
+                        atlas.tile_count, atlas.layers, atlas.tile_size
                     ));
                 }
             }

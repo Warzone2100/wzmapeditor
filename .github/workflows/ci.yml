@@ -105,7 +105,6 @@ jobs:
       contents: write
 
     env:
-      RUSTUP_TOOLCHAIN: '1.95.0'
       RUSTTARGET: '${{ matrix.rust_target }}'
       USE_CROSS: '${{ matrix.use_cross }}'
       WZMAPEDITOR_OUTPUT_DESC: '${{ matrix.output_desc }}'
@@ -155,9 +154,6 @@ jobs:
 
     permissions:
       contents: write
-
-    env:
-      RUSTUP_TOOLCHAIN: '1.95.0'
 
     steps:
     - uses: actions/checkout@v6

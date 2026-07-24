@@ -1,0 +1,8 @@
+# Single source of truth for the build toolchain: rustup (local) and the CI
+# workflows (actions-rust-lang/setup-rust-toolchain, which reads this file when
+# no `toolchain:` input is given) both honour it. Bump the channel here to move
+# everything at once. The MSRV in Cargo.toml (`rust-version`) is a separate
+# promise and must be updated by hand.
+[toolchain]
+channel = "1.97.1"
+components = ["clippy", "rustfmt"]

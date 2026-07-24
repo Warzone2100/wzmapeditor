@@ -22,7 +22,7 @@ A browser build runs at **[mapeditor.wz2100.net](https://mapeditor.wz2100.net)**
 
 For building from source:
 
-- [rustup](https://rustup.rs/) (installs `rustc` + `cargo`, stable 1.95+)
+- [rustup](https://rustup.rs/) (installs `rustc` + `cargo`, stable 1.97+)
 
 ---
 
@@ -43,7 +43,7 @@ Configuration and cached game data live in:
 
 ## Building from source
 
-Requires [Rust](https://rustup.rs/) 1.95 or later (stable toolchain).
+Requires [Rust](https://rustup.rs/) 1.97 or later (stable toolchain).
 
 ```bash
 git clone https://github.com/Warzone2100/wzmapeditor

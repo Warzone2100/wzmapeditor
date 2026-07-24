@@ -85,6 +85,7 @@ pub(super) fn load_map(
         }
     }
 
+    map.map_name = strip_player_count_prefix(&map.map_name).to_string();
     app.document = Some(MapDocument::new(map));
     // Mark repaired maps dirty so the backfilled terrain table is written on
     // the next save, fixing the map on disk for in-game use.
@@ -202,22 +203,26 @@ pub(super) fn current_tileset_name(app: &EditorApp) -> String {
     "arizona".to_string()
 }
 
+/// Strip a WZ2100 `"Nc-"` or `"Np-"` player-count prefix from a map name.
+pub(crate) fn strip_player_count_prefix(name: &str) -> &str {
+    ["c-", "p-"]
+        .into_iter()
+        .find_map(|sep| {
+            name.find(sep).and_then(|idx| {
+                (idx > 0 && name[..idx].chars().all(|c| c.is_ascii_digit()))
+                    .then(|| &name[idx + sep.len()..])
+            })
+        })
+        .unwrap_or(name)
+}
+
 /// Build a suggested `.wz` filename from the map name and player count.
 pub(super) fn suggested_wz_filename(app: &EditorApp) -> String {
     let raw_name = app
         .document
         .as_ref()
         .map_or("NewMap", |d| d.map.map_name.as_str());
-    // Strip an existing "Nc-" or "Np-" prefix to avoid doubling.
-    let base = ["c-", "p-"]
-        .into_iter()
-        .find_map(|sep| {
-            raw_name.find(sep).and_then(|idx| {
-                (idx > 0 && raw_name[..idx].chars().all(|c| c.is_ascii_digit()))
-                    .then(|| &raw_name[idx + sep.len()..])
-            })
-        })
-        .unwrap_or(raw_name);
+    let base = strip_player_count_prefix(raw_name);
     format!("{}c-{base}.wz", app.map_players)
 }
 
@@ -231,7 +236,7 @@ pub(super) fn save_to_wz(app: &mut EditorApp, path: &std::path::Path) {
         return;
     };
     if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-        doc.map.map_name = stem.to_string();
+        doc.map.map_name = strip_player_count_prefix(stem).to_string();
     }
     doc.map.players = players;
     doc.map.tileset = tileset_name;
@@ -315,4 +320,24 @@ pub(super) fn parse_player_count_from_name(name: &str) -> u8 {
     }
     // Default to 2 for maps without the convention.
     2
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_player_count_prefix;
+
+    #[test]
+    fn strips_player_count_prefixes() {
+        assert_eq!(strip_player_count_prefix("2c-FunMap"), "FunMap");
+        assert_eq!(strip_player_count_prefix("4c-Sk-Rush"), "Sk-Rush");
+        assert_eq!(strip_player_count_prefix("10p-Big"), "Big");
+    }
+
+    #[test]
+    fn leaves_names_without_a_valid_prefix_unchanged() {
+        assert_eq!(strip_player_count_prefix("FunMap"), "FunMap");
+        assert_eq!(strip_player_count_prefix("2cFunMap"), "2cFunMap");
+        assert_eq!(strip_player_count_prefix("c-Foo"), "c-Foo");
+        assert_eq!(strip_player_count_prefix(""), "");
+    }
 }

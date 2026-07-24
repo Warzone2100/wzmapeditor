@@ -6,7 +6,7 @@ mod designer;
 pub(crate) mod dialogs;
 mod dock_viewer;
 mod duplicate;
-mod map_io;
+pub(crate) mod map_io;
 pub mod output_log;
 mod testing;
 mod tileset;

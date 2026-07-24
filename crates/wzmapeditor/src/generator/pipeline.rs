@@ -8,6 +8,7 @@ use wz_maplib::terrain_types::TerrainTypeData;
 
 use super::heightmap::Heightmap;
 use super::{GeneratorConfig, GeneratorResult, ProgressReporter};
+use crate::app::map_io::strip_player_count_prefix;
 
 /// Run the full map generation pipeline. Entry point called from the
 /// background thread.
@@ -76,8 +77,11 @@ pub(crate) fn generate_map(
 
 /// Build the base `WzMap` from the generated heightmap.
 fn build_map_data(config: &GeneratorConfig, heightmap: &Heightmap) -> WzMap {
-    let name = format!("{}c-{}", config.players, config.map_name);
-    let mut map = WzMap::new(&name, config.width, config.height);
+    let mut map = WzMap::new(
+        strip_player_count_prefix(&config.map_name),
+        config.width,
+        config.height,
+    );
     map.tileset = config.tileset.as_str().to_string();
     map.players = config.players;
     map.terrain_types = Some(TerrainTypeData {

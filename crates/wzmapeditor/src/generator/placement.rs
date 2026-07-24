@@ -619,8 +619,7 @@ mod tests {
         let mut rng = fastrand::Rng::with_seed(config.seed);
         let net = build_node_network(config, &mut rng);
         let la = assign_height_levels(&net, config, &mut rng);
-        let name = format!("{}c-{}", config.players, config.map_name);
-        let mut map = WzMap::new(&name, config.width, config.height);
+        let mut map = WzMap::new(&config.map_name, config.width, config.height);
         map.players = config.players;
         map.tileset = config.tileset.as_str().to_string();
         (map, net, la)

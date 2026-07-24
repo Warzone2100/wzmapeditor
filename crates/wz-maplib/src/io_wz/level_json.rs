@@ -32,6 +32,9 @@ pub(super) fn build_level_json(map: &WzMap) -> String {
     if let Some(license) = &map.license {
         value["license"] = serde_json::json!(license);
     }
+    if let Some(created_date) = &map.created_date {
+        value["created-date"] = serde_json::json!(created_date);
+    }
     serde_json::to_string_pretty(&value).expect("level.json serialization cannot fail")
 }
 
@@ -43,6 +46,7 @@ pub(super) struct LevelMeta {
     pub author: Option<String>,
     pub additional_authors: Vec<String>,
     pub license: Option<String>,
+    pub created_date: Option<String>,
 }
 
 /// Try to read `level.json` from a zip archive and extract metadata.
@@ -61,6 +65,10 @@ pub(super) fn read_level_json<R: std::io::Read + std::io::Seek>(
         .get("license")
         .and_then(|v| v.as_str())
         .map(str::to_string);
+    let created_date = json
+        .get("created-date")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
     Some(LevelMeta {
         name,
         players,
@@ -68,6 +76,7 @@ pub(super) fn read_level_json<R: std::io::Read + std::io::Seek>(
         author,
         additional_authors,
         license,
+        created_date,
     })
 }
 

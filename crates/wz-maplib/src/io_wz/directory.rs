@@ -98,6 +98,7 @@ pub fn load_from_directory(dir: &Path) -> Result<WzMap, MapError> {
         author: None,
         additional_authors: Vec::new(),
         license: None,
+        created_date: None,
     })
 }
 

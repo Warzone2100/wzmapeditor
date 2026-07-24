@@ -860,6 +860,7 @@ mod tests {
             author: None,
             additional_authors: Vec::new(),
             license: None,
+            created_date: None,
         };
 
         // Camera looking straight down at the map center

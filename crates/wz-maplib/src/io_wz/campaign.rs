@@ -129,6 +129,7 @@ pub fn load_campaign_level(
         author: None,
         additional_authors: Vec::new(),
         license: None,
+        created_date: None,
     })
 }
 

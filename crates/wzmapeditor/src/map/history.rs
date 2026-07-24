@@ -161,6 +161,7 @@ mod tests {
             author: None,
             additional_authors: Vec::new(),
             license: None,
+            created_date: None,
         };
         compound.execute(&mut map);
         assert_eq!(counter.load(Ordering::Relaxed), 111);

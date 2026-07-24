@@ -127,7 +127,7 @@ pub fn load_from_wz_reader<R: std::io::Read + std::io::Seek>(
         .ok()
         .and_then(|bytes| String::from_utf8(bytes).ok());
 
-    let (map_name, players, tileset, author, additional_authors, license) =
+    let (map_name, players, tileset, author, additional_authors, license, created_date) =
         if let Some(meta) = level_meta {
             (
                 meta.name,
@@ -136,11 +136,12 @@ pub fn load_from_wz_reader<R: std::io::Read + std::io::Seek>(
                 meta.author,
                 meta.additional_authors,
                 meta.license,
+                meta.created_date,
             )
         } else {
             let p = parse_player_count(&map_name);
             let t = detect_tileset_from_ttp(terrain_types.as_ref());
-            (map_name, p, t, None, Vec::new(), None)
+            (map_name, p, t, None, Vec::new(), None, None)
         };
 
     Ok(WzMap {
@@ -157,6 +158,7 @@ pub fn load_from_wz_reader<R: std::io::Read + std::io::Seek>(
         author,
         additional_authors,
         license,
+        created_date,
     })
 }
 
@@ -317,7 +319,7 @@ pub fn load_map_from_archive_prefix(wz_path: &Path, prefix: &str) -> Result<WzMa
         Err(_) => Vec::new(),
     };
 
-    let (map_name, players, tileset, author, additional_authors, license) =
+    let (map_name, players, tileset, author, additional_authors, license, created_date) =
         if let Some(meta) = level_meta {
             (
                 meta.name,
@@ -326,11 +328,12 @@ pub fn load_map_from_archive_prefix(wz_path: &Path, prefix: &str) -> Result<WzMa
                 meta.author,
                 meta.additional_authors,
                 meta.license,
+                meta.created_date,
             )
         } else {
             let p = parse_player_count(&map_name);
             let t = detect_tileset_from_ttp(terrain_types.as_ref());
-            (map_name, p, t, None, Vec::new(), None)
+            (map_name, p, t, None, Vec::new(), None, None)
         };
 
     Ok(WzMap {
@@ -347,6 +350,7 @@ pub fn load_map_from_archive_prefix(wz_path: &Path, prefix: &str) -> Result<WzMa
         author,
         additional_authors,
         license,
+        created_date,
     })
 }
 

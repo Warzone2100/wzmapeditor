@@ -626,6 +626,7 @@ mod tests {
             author: None,
             additional_authors: Vec::new(),
             license: None,
+            created_date: None,
         };
         let selected = vec![(4, 4)];
         let snap = build_drag_snapshot(&wzmap.map_data, &selected, 2);

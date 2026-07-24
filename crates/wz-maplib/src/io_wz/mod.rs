@@ -83,6 +83,11 @@ pub struct WzMap {
     pub additional_authors: Vec<String>,
     /// SPDX license expression from `level.json`'s `license` field.
     pub license: Option<String>,
+    /// Creation timestamp from `level.json`'s `created-date` field.
+    ///
+    /// Preserved verbatim on round-trip so a map keeps its original date. The
+    /// documented form is `YYYY-MM-DD` with an optional ` HH:MM:SS` suffix.
+    pub created_date: Option<String>,
 }
 
 impl WzMap {
@@ -101,6 +106,7 @@ impl WzMap {
             author: None,
             additional_authors: Vec::new(),
             license: None,
+            created_date: None,
         }
     }
 
@@ -244,6 +250,7 @@ impl WzMap {
             author: self.author.clone(),
             additional_authors: self.additional_authors.clone(),
             license: self.license.clone(),
+            created_date: self.created_date.clone(),
         };
         (out, report)
     }
@@ -615,6 +622,22 @@ mod tests {
             loaded.license.as_deref(),
             Some("CC-BY-SA-3.0 OR GPL-2.0-or-later")
         );
+
+        let _ = std::fs::remove_file(&wz_path);
+    }
+
+    #[test]
+    fn wz_archive_roundtrip_preserves_created_date() {
+        let mut map = make_test_map();
+        map.created_date = Some("2026-05-14 11:14:46".to_string());
+
+        let wz_path = std::env::temp_dir().join("wzmapeditor_test_created_date.wz");
+        let _ = std::fs::remove_file(&wz_path);
+
+        save_to_wz_archive(&map, &wz_path, OutputFormat::Ver3).unwrap();
+        let loaded = load_from_wz_archive(&wz_path).unwrap();
+
+        assert_eq!(loaded.created_date.as_deref(), Some("2026-05-14 11:14:46"));
 
         let _ = std::fs::remove_file(&wz_path);
     }

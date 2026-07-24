@@ -241,6 +241,10 @@ pub(super) fn save_to_wz(app: &mut EditorApp, path: &std::path::Path) {
     doc.map.players = players;
     doc.map.tileset = tileset_name;
     doc.map.custom_templates_json = custom_templates_json;
+    // Only stamp when unset, so a re-saved map keeps its original created-date.
+    if doc.map.created_date.is_none() {
+        doc.map.created_date = Some(current_created_date());
+    }
     match write_wz(&doc.map, path) {
         Ok(()) => {
             app.save_path = Some(path.to_path_buf());
@@ -322,9 +326,46 @@ pub(super) fn parse_player_count_from_name(name: &str) -> u8 {
     2
 }
 
+/// Current UTC time formatted as a `level.json` `created-date` value.
+fn current_created_date() -> String {
+    let secs = web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    format_created_date(secs)
+}
+
+/// Format a unix timestamp as `YYYY-MM-DD HH:MM:SS` in UTC.
+fn format_created_date(unix_secs: u64) -> String {
+    let (year, month, day) = civil_from_days((unix_secs / 86_400) as i64);
+    let secs_of_day = unix_secs % 86_400;
+    let hour = secs_of_day / 3600;
+    let minute = (secs_of_day % 3600) / 60;
+    let second = secs_of_day % 60;
+    format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02}")
+}
+
+/// Convert days since the Unix epoch to a `(year, month, day)` civil date.
+///
+/// Howard Hinnant's algorithm: it re-bases the year to start in March so the
+/// leap day falls last, which removes the per-month length special-casing a
+/// naive conversion would need.
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    let z = days + 719_468;
+    let era = (if z >= 0 { z } else { z - 146_096 }) / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let month = (if mp < 10 { mp + 3 } else { mp - 9 }) as u32;
+    let year = era * 400 + yoe as i64 + i64::from(month <= 2);
+    (year, month, day)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::strip_player_count_prefix;
+    use super::{format_created_date, strip_player_count_prefix};
 
     #[test]
     fn strips_player_count_prefixes() {
@@ -339,5 +380,13 @@ mod tests {
         assert_eq!(strip_player_count_prefix("2cFunMap"), "2cFunMap");
         assert_eq!(strip_player_count_prefix("c-Foo"), "c-Foo");
         assert_eq!(strip_player_count_prefix(""), "");
+    }
+
+    #[test]
+    fn formats_created_date_in_utc() {
+        assert_eq!(format_created_date(0), "1970-01-01 00:00:00");
+        assert_eq!(format_created_date(1_700_000_000), "2023-11-14 22:13:20");
+        // Leap day: 2024-02-29 exercises the March-based year rebasing.
+        assert_eq!(format_created_date(1_709_164_800), "2024-02-29 00:00:00");
     }
 }
